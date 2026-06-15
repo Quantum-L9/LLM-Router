@@ -113,7 +113,7 @@ export class L9LLMRouter {
       );
     }
 
-    // Apply model downgrade if throttled
+    // Apply model downgrade if throttled (Fix #5: propagate downgrade to execution)
     if (throttle.forceDowngrade) {
       decision.downgraded = true;
       decision.downgradedFrom = decision.model;
@@ -122,9 +122,14 @@ export class L9LLMRouter {
 
     // Execute based on provider
     let response: LLMResponse;
+    let billedCost: number;
 
     if (decision.provider === Provider.PERPLEXITY) {
+      // Fix #5: Use decision.model (which may have been downgraded) for config override
       const config = resolvePerplexityConfig(task);
+      if (decision.downgraded) {
+        config.model = decision.model as any; // Apply downgraded model
+      }
 
       if (options?.consensus && config.variations > 1) {
         const result = await this.perplexity.completeWithConsensus(
@@ -134,6 +139,8 @@ export class L9LLMRouter {
           options.assistantContext,
         );
         response = result.best;
+        // Fix #6: Track total billed cost across all consensus calls, not just best
+        billedCost = result.all.reduce((sum, r) => sum + r.cost, 0);
       } else {
         response = await this.perplexity.complete(
           config,
@@ -141,6 +148,7 @@ export class L9LLMRouter {
           userPrompt,
           options?.assistantContext,
         );
+        billedCost = response.cost;
       }
     } else if (VISION_TASK_TYPES.has(task.type) && options?.images?.length) {
       const visionConfig = resolveVisionConfig(
@@ -148,14 +156,23 @@ export class L9LLMRouter {
         task.complexity,
         options.images.length,
       );
+      // Fix #5: Apply downgraded model to vision config
+      if (decision.downgraded) {
+        visionConfig.model = decision.model as any;
+      }
       response = await this.openrouter.completeWithVision(
         visionConfig,
         systemPrompt,
         userPrompt,
         options.images,
       );
+      billedCost = response.cost;
     } else {
       const config = resolveGeneralConfig(task);
+      // Fix #5: Apply downgraded model to general config
+      if (decision.downgraded) {
+        config.model = decision.model as any;
+      }
       const fallbacks = getFallbackChain(config.model);
       response = await this.openrouter.completeWithFallback(
         config,
@@ -163,13 +180,14 @@ export class L9LLMRouter {
         systemPrompt,
         userPrompt,
       );
+      billedCost = response.cost;
     }
 
-    // Record spend
-    this.budget.recordSpend(task.clientId, response.cost);
+    // Record spend (Fix #6: use billedCost which includes all consensus calls)
+    this.budget.recordSpend(task.clientId, billedCost);
 
     // Log the routing decision
-    decision.actualCost = response.cost;
+    decision.actualCost = billedCost;
     decision.latencyMs = response.latencyMs;
     this.callLog.push(decision);
 
@@ -189,8 +207,8 @@ export class L9LLMRouter {
     if (SEARCH_TASK_TYPES.has(task.type)) {
       const config = resolvePerplexityConfig(task);
       return {
-        taskId: task.id ?? crypto.randomUUID(),
-        clientId: task.clientId,
+        taskId: crypto.randomUUID(),
+        clientId: task.clientId ?? 'default',
         taskType: task.type,
         complexity: task.complexity,
         provider: Provider.PERPLEXITY,
@@ -208,8 +226,8 @@ export class L9LLMRouter {
         task.complexity,
       );
       return {
-        taskId: task.id ?? crypto.randomUUID(),
-        clientId: task.clientId,
+        taskId: crypto.randomUUID(),
+        clientId: task.clientId ?? 'default',
         taskType: task.type,
         complexity: task.complexity,
         provider: Provider.OPENROUTER,
@@ -223,8 +241,8 @@ export class L9LLMRouter {
     // Everything else → OpenRouter general matrix
     const config = resolveGeneralConfig(task);
     return {
-      taskId: task.id ?? crypto.randomUUID(),
-      clientId: task.clientId,
+      taskId: crypto.randomUUID(),
+      clientId: task.clientId ?? 'default',
       taskType: task.type,
       complexity: task.complexity,
       provider: Provider.OPENROUTER,
