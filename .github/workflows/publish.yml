@@ -30,6 +30,27 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run build
-      - run: npm publish
+
+      # Gate publish on a version bump: npm refuses to republish an existing
+      # name@version, so manual dispatch or any non-bump push to package.json
+      # would otherwise fail the job. Skip cleanly when this version already
+      # exists on the registry.
+      - name: Check whether this version is already published
+        id: published
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if npm view "@quantum-l9/llm-router@${VERSION}" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "@quantum-l9/llm-router@${VERSION} is already published — skipping publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "@quantum-l9/llm-router@${VERSION} not found — will publish."
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish
+        if: steps.published.outputs.exists == 'false'
+        run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
