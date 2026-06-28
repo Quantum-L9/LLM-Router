@@ -16,6 +16,9 @@
   "keywords": ["llm", "router", "openrouter", "perplexity", "anthropic", "openai", "multi-provider", "budget"],
   "author": "L9 Systems",
   "license": "PROPRIETARY",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "dependencies": {
     "openai": "^4.50.0",
     "zod": "^3.23.0",
