@@ -98,9 +98,15 @@ export class L9LLMRouter {
   ): Promise<LLMResponse> {
     const decision = this.route(task);
 
+    // Budget tracking is per-client, so a clientId is required.
+    const clientId = task.clientId;
+    if (!clientId) {
+      throw new Error('TaskDescriptor.clientId is required for budget tracking');
+    }
+
     // Check budget
     const throttle = this.budget.evaluateTask(
-      task.clientId,
+      clientId,
       task,
       decision.estimatedCost,
     );
@@ -184,7 +190,7 @@ export class L9LLMRouter {
     }
 
     // Record spend (Fix #6: use billedCost which includes all consensus calls)
-    this.budget.recordSpend(task.clientId, billedCost);
+    this.budget.recordSpend(clientId, billedCost);
 
     // Log the routing decision
     decision.actualCost = billedCost;
