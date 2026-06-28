@@ -1,6 +1,6 @@
 /**
  * @l9_meta
- * @module @l9/llm-router
+ * @module @quantum-l9/llm-router
  * @file src/matrices/perplexity-matrix.ts
  * @purpose Perplexity Sonar model + search depth resolver
  * @origin Ported from Enrichment.Inference.Engine/app/engines/search_optimizer.py

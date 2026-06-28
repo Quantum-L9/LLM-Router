@@ -1,4 +1,4 @@
-# @l9/llm-router
+# @quantum-l9/llm-router
 
 > The shared intelligence routing layer for all L9 bots. One module, all models, zero waste.
 
@@ -7,7 +7,7 @@
 A standalone, reusable TypeScript module that any L9 bot imports to get optimal model selection, budget enforcement, and multi-provider routing — without each bot implementing its own LLM integration.
 
 ```typescript
-import { L9LLMRouter, TaskType, TaskComplexity } from '@l9/llm-router';
+import { L9LLMRouter, TaskType, TaskComplexity } from '@quantum-l9/llm-router';
 
 const router = new L9LLMRouter({
   perplexityApiKey: process.env.PERPLEXITY_API_KEY!,
@@ -128,7 +128,7 @@ Cost: ~$0.40 per full site audit (5 pages × 3 viewports + competitor + conversi
 ```typescript
 // In l9-seo-bot/package.json
 "dependencies": {
-  "@l9/llm-router": "file:../l9-llm-router"
+  "@quantum-l9/llm-router": "file:../l9-llm-router"
 }
 ```
 
@@ -137,7 +137,7 @@ Cost: ~$0.40 per full site audit (5 pages × 3 viewports + competitor + conversi
 ```typescript
 // In l9-website-factory/package.json
 "dependencies": {
-  "@l9/llm-router": "file:../l9-llm-router"
+  "@quantum-l9/llm-router": "file:../l9-llm-router"
 }
 ```
 

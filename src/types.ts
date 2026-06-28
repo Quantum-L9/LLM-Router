@@ -1,6 +1,6 @@
 /**
  * @l9_meta
- * @module @l9/llm-router
+ * @module @quantum-l9/llm-router
  * @file src/types.ts
  * @purpose Core type definitions for the multi-provider LLM routing system
  * @shared_by All L9 bots (SEO Bot, Website Factory, future bots)

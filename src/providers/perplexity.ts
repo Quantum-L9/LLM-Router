@@ -1,6 +1,6 @@
 /**
  * @l9_meta
- * @module @l9/llm-router
+ * @module @quantum-l9/llm-router
  * @file src/providers/perplexity.ts
  * @purpose Perplexity API client — handles all search-grounded LLM calls
  * @api https://api.perplexity.ai/chat/completions

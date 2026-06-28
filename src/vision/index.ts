@@ -1,6 +1,6 @@
 /**
  * @l9_meta
- * @module @l9/llm-router
+ * @module @quantum-l9/llm-router
  * @file src/vision/index.ts
  * @purpose Visual QA engine — uses vision models to "see" sites like a human would
  * @use_case Layout validation, alignment checks, mobile/desktop rendering QA

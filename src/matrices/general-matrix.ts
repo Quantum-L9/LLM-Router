@@ -1,6 +1,6 @@
 /**
  * @l9_meta
- * @module @l9/llm-router
+ * @module @quantum-l9/llm-router
  * @file src/matrices/general-matrix.ts
  * @purpose General-purpose model selection matrix for non-search tasks
  * @providers OpenRouter (primary), Anthropic Direct (fallback), OpenAI Direct (fallback)
@@ -36,10 +36,8 @@ const MODEL_COST_PER_1K_OUTPUT: Record<GeneralModel, number> = {
   [GeneralModel.O1]: 0.06,
   [GeneralModel.O3]: 0.06,
 
-  // Vision (same as base models)
-  [GeneralModel.GPT4O_VISION]: 0.01,
-  [GeneralModel.CLAUDE_SONNET_VISION]: 0.015,
-  [GeneralModel.GEMINI_FLASH_VISION]: 0.0004,
+  // Vision variants share their base model's cost (same model IDs), so they
+  // resolve to the base keys above instead of being listed again.
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -193,9 +191,8 @@ const FALLBACK_CHAINS: Record<GeneralModel, GeneralModel[]> = {
   [GeneralModel.O1]: [GeneralModel.O3, GeneralModel.CLAUDE_SONNET],
   [GeneralModel.O3]: [GeneralModel.O1, GeneralModel.CLAUDE_OPUS],
 
-  [GeneralModel.GPT4O_VISION]: [GeneralModel.CLAUDE_SONNET_VISION, GeneralModel.GEMINI_FLASH_VISION],
-  [GeneralModel.CLAUDE_SONNET_VISION]: [GeneralModel.GPT4O_VISION, GeneralModel.GEMINI_FLASH_VISION],
-  [GeneralModel.GEMINI_FLASH_VISION]: [GeneralModel.GPT4O_VISION, GeneralModel.CLAUDE_SONNET_VISION],
+  // Vision variants resolve to their base model's fallback chain above (the
+  // *_VISION members share the base model IDs, so they map to the same keys).
 };
 
 // ═══════════════════════════════════════════════════════════════

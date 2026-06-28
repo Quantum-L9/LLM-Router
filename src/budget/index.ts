@@ -1,6 +1,6 @@
 /**
  * @l9_meta
- * @module @l9/llm-router
+ * @module @quantum-l9/llm-router
  * @file src/budget/index.ts
  * @purpose Budget enforcement engine with trajectory-based throttling and surge awareness
  * @design No daily hard cap. Monthly budget per client. Weekly trajectory. Surge-aware.

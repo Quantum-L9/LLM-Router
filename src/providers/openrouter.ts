@@ -1,6 +1,6 @@
 /**
  * @l9_meta
- * @module @l9/llm-router
+ * @module @quantum-l9/llm-router
  * @file src/providers/openrouter.ts
  * @purpose OpenRouter API client — unified gateway to GPT-4o, Claude, Gemini, etc.
  * @api https://openrouter.ai/api/v1/chat/completions
@@ -35,10 +35,10 @@ const OPENROUTER_MODEL_IDS: Record<GeneralModel, string> = {
   [GeneralModel.O1]: 'openai/o1',
   [GeneralModel.O3]: 'openai/o3',
 
-  // Vision (same models, vision-enabled)
-  [GeneralModel.GPT4O_VISION]: 'openai/gpt-4o',
-  [GeneralModel.CLAUDE_SONNET_VISION]: 'anthropic/claude-sonnet-4-20250514',
-  [GeneralModel.GEMINI_FLASH_VISION]: 'google/gemini-2.5-flash-preview',
+  // Vision variants (GPT4O_VISION, CLAUDE_SONNET_VISION, GEMINI_FLASH_VISION)
+  // share the same OpenRouter model IDs as their base models — those models are
+  // natively multimodal — so they resolve to the base keys above rather than
+  // being listed again (duplicate computed keys are a compile error).
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -233,9 +233,7 @@ export class OpenRouterClient {
       [GeneralModel.CLAUDE_OPUS]: { input: 15.00, output: 75.00 },
       [GeneralModel.O1]: { input: 15.00, output: 60.00 },
       [GeneralModel.O3]: { input: 15.00, output: 60.00 },
-      [GeneralModel.GPT4O_VISION]: { input: 2.50, output: 10.00 },
-      [GeneralModel.CLAUDE_SONNET_VISION]: { input: 3.00, output: 15.00 },
-      [GeneralModel.GEMINI_FLASH_VISION]: { input: 0.15, output: 0.60 },
+      // Vision variants share their base model's pricing (same model IDs).
     };
 
     const rates = COST_PER_1M[model];
