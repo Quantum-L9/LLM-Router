@@ -1,6 +1,6 @@
 /**
  * @l9_meta
- * @module @l9/llm-router
+ * @module @quantum-l9/llm-router
  * @file src/index.ts
  * @purpose Main entry point — the unified LLM Router that all L9 bots consume
  * @pattern TaskDescriptor → Router → Provider Client → LLMResponse

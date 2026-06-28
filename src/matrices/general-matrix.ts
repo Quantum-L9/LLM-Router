@@ -1,6 +1,6 @@
 /**
  * @l9_meta
- * @module @l9/llm-router
+ * @module @quantum-l9/llm-router
  * @file src/matrices/general-matrix.ts
  * @purpose General-purpose model selection matrix for non-search tasks
  * @providers OpenRouter (primary), Anthropic Direct (fallback), OpenAI Direct (fallback)

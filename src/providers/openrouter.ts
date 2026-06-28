@@ -1,6 +1,6 @@
 /**
  * @l9_meta
- * @module @l9/llm-router
+ * @module @quantum-l9/llm-router
  * @file src/providers/openrouter.ts
  * @purpose OpenRouter API client — unified gateway to GPT-4o, Claude, Gemini, etc.
  * @api https://openrouter.ai/api/v1/chat/completions
