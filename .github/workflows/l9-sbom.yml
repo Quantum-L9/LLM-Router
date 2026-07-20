@@ -1,0 +1,11 @@
+# Quantum-L9 org starter — SBOM generation (SPDX-JSON via Syft). Calls l9-ci-core kernel; do not add logic here.
+name: "L9 SBOM Generator"
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+jobs:
+  l9_sbom:
+    uses: Quantum-L9/l9-ci-core/.github/workflows/sbom.yml@v1
+    secrets: inherit

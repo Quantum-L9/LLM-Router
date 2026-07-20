@@ -1,0 +1,18 @@
+# Quantum-L9/LLM-Router CODEOWNERS
+# Adapted from Quantum-L9/.github org defaults for this repo's actual layout.
+
+# Default — platform team owns everything
+*                              @Quantum-L9/platform
+
+# CI/CD workflows — highest blast-radius
+/.github/workflows/            @Quantum-L9/platform
+
+# Community health files — org governance surfaces
+/CONTRIBUTING.md               @Quantum-L9/platform
+/SECURITY.md                   @Quantum-L9/platform
+/CODE_OF_CONDUCT.md            @Quantum-L9/platform
+/SUPPORT.md                    @Quantum-L9/platform
+/.github/PULL_REQUEST_TEMPLATE.md  @Quantum-L9/platform
+
+# Package manifest and publish config
+/package.json                  @Quantum-L9/platform

@@ -1,0 +1,16 @@
+# Quantum-L9 org starter — Security scan pipeline (gitleaks, Bandit, Semgrep, pip-audit). Calls l9-ci-core kernel; do not add logic here.
+name: "L9 Security Scan"
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'
+
+jobs:
+  l9_security:
+    uses: Quantum-L9/l9-ci-core/.github/workflows/security.yml@v1
+    secrets: inherit
+    with:
+      python-version: "3.12"
+      run-npm-audit: false

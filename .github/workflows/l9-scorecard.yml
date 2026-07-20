@@ -1,0 +1,14 @@
+# Quantum-L9 org starter — OpenSSF Scorecard analysis. Calls l9-ci-core kernel; do not add logic here.
+name: "L9 OpenSSF Scorecard"
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  l9_scorecard:
+    uses: Quantum-L9/l9-ci-core/.github/workflows/scorecard.yml@v1
+    secrets: inherit

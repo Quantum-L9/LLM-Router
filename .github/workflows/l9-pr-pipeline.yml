@@ -1,0 +1,16 @@
+# Quantum-L9 org starter — Full PR validation pipeline (lint, type-check, tests, security). Calls l9-ci-core kernel; do not add logic here.
+name: "L9 PR Pipeline"
+on:
+  pull_request:
+    branches: [main, 'release/**']
+  push:
+    branches: [main]
+
+jobs:
+  l9_pr_pipeline:
+    uses: Quantum-L9/l9-ci-core/.github/workflows/pr-pipeline.yml@v1
+    secrets: inherit
+    with:
+      python-version: "3.12"
+      run-security: true
+      working-directory: "."

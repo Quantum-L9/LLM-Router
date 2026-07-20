@@ -1,0 +1,13 @@
+# Quantum-L9 org starter — Three-tier separation enforcement (model/service/interface). Calls l9-ci-core kernel; do not add logic here.
+name: "L9 Governance Trio"
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  l9_governance:
+    uses: Quantum-L9/l9-ci-core/.github/workflows/trio-governance.yml@v1
+    secrets: inherit
+    with:
+      src-directory: "src"

@@ -10,7 +10,6 @@
 import {
   TaskDescriptor,
   TaskType,
-  TaskComplexity,
   LLMResponse,
   Provider,
   BudgetConfig,
@@ -21,7 +20,7 @@ import {
 } from './types.js';
 import { resolvePerplexityConfig } from './matrices/perplexity-matrix.js';
 import { resolveGeneralConfig, getFallbackChain } from './matrices/general-matrix.js';
-import { BudgetTracker, ThrottleLevel } from './budget/index.js';
+import { BudgetTracker } from './budget/index.js';
 import { PerplexityClient } from './providers/perplexity.js';
 import { OpenRouterClient } from './providers/openrouter.js';
 import {
