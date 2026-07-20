@@ -1,0 +1,156 @@
+# L9 consumer lint + test workflow for Node.js / TypeScript
+#
+# Copied from Quantum-L9/l9-ci-core docs/templates/l9-lint-test-node.yml.
+# Node counterpart to l9-lint-test.yml (Python). Provides the TypeScript/Node
+# hygiene half that v1's pr-pipeline never covered.
+#
+# Three independent gates (each surfaces as its own required check):
+#   lint       -> eslint .          lint / style / correctness (your eslint config)
+#   typecheck  -> tsc --noEmit      type-check the whole tree against the type
+#                                   system (honors tsconfig, e.g. strict: true).
+#                                   NO compiled output; it proves the types are
+#                                   sound, it does not run the code.
+#   test       -> vitest run        one-shot, non-interactive run of *.test.ts.
+#                                   `run` is mandatory in CI — bare `vitest` is
+#                                   watch mode and would hang the job forever.
+#
+# v2 conventions: immutable event-revision checkout, contents: read only (no
+# write scopes). Node comes preinstalled on ubuntu-latest; see the optional
+# setup-node block to pin a specific version. Package manager auto-detected
+# from the lockfile (npm / pnpm / yarn).
+name: L9 Lint and Test (Node)
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: l9-lint-test-node-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ── Reusable anchors kept inline per job (templates must stay copy-paste-able).
+# Each job: immutable checkout -> install deps -> run one gate.
+
+jobs:
+  lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout immutable event revision
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin \
+            "https://x-access-token:${TOKEN}@github.com/${REPOSITORY}.git"
+          git -c protocol.version=2 fetch --depth=1 origin "${REVISION}"
+          git checkout --detach FETCH_HEAD
+          git remote set-url origin "https://github.com/${REPOSITORY}.git"
+      # OPTIONAL — pin Node. ubuntu-latest ships Node 20+, used as-is. To pin,
+      # uncomment and set a full 40-char SHA you trust for actions/setup-node:
+      # - uses: actions/setup-node@<full-40-char-sha>  # v4.x
+      #   with:
+      #     node-version-file: package.json   # or .nvmrc, or node-version: "20"
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          corepack enable || true
+          if [ -f pnpm-lock.yaml ]; then
+            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile
+          elif [ -f yarn.lock ]; then
+            corepack prepare yarn@stable --activate && yarn install --immutable
+          elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+      - name: ESLint
+        run: npx --no-install eslint . || npx eslint .
+
+  typecheck:
+    name: tsc --noEmit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout immutable event revision
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin \
+            "https://x-access-token:${TOKEN}@github.com/${REPOSITORY}.git"
+          git -c protocol.version=2 fetch --depth=1 origin "${REVISION}"
+          git checkout --detach FETCH_HEAD
+          git remote set-url origin "https://github.com/${REPOSITORY}.git"
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          corepack enable || true
+          if [ -f pnpm-lock.yaml ]; then
+            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile
+          elif [ -f yarn.lock ]; then
+            corepack prepare yarn@stable --activate && yarn install --immutable
+          elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+      - name: Type-check (tsc --noEmit)
+        run: npx --no-install tsc --noEmit || npx tsc --noEmit
+
+  test:
+    name: Vitest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout immutable event revision
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin \
+            "https://x-access-token:${TOKEN}@github.com/${REPOSITORY}.git"
+          git -c protocol.version=2 fetch --depth=1 origin "${REVISION}"
+          git checkout --detach FETCH_HEAD
+          git remote set-url origin "https://github.com/${REPOSITORY}.git"
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          corepack enable || true
+          if [ -f pnpm-lock.yaml ]; then
+            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile
+          elif [ -f yarn.lock ]; then
+            corepack prepare yarn@stable --activate && yarn install --immutable
+          elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+      - name: Vitest (one-shot, non-interactive)
+        env:
+          CI: "true"
+        run: npx --no-install vitest run || npx vitest run
+        # For coverage, install @vitest/coverage-v8 and use:
+        #   npx vitest run --coverage

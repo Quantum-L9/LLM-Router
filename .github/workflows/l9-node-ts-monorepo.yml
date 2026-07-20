@@ -1,0 +1,75 @@
+# Quantum-L9 org starter — Node/TypeScript monorepo pipeline.
+# Inline jobs for install/typecheck/test/publish-dry-run.
+# Security and Scorecard delegate to l9-ci-core kernels; do not add logic to those jobs.
+name: "L9 Node/TS Monorepo Pipeline"
+on:
+  pull_request:
+    branches: [main, 'release/**']
+  push:
+    branches: [main]
+
+jobs:
+  install-and-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      - name: Type-check
+        run: npm run typecheck
+
+  test-by-segment:
+    needs: install-and-typecheck
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        segment: [unit, integration]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      - name: Run Jest (${{ matrix.segment }})
+        run: npx jest --testPathPattern="${{ matrix.segment }}" --passWithNoTests
+
+  publish-dry-run:
+    needs: test-by-segment
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      - name: Publish dry-run (all public packages)
+        run: |
+          for pkg_dir in packages/*/; do
+            pkg_json="$pkg_dir/package.json"
+            if [ ! -f "$pkg_json" ]; then continue; fi
+            private=$(node -e "const p=require('./$pkg_json'); console.log(p.private || false)")
+            if [ "$private" = "false" ] || [ "$private" = "undefined" ]; then
+              echo "--- Dry-run: $pkg_dir ---"
+              (cd "$pkg_dir" && npm publish --dry-run)
+            fi
+          done
+
+  security:
+    uses: Quantum-L9/l9-ci-core/.github/workflows/security.yml@v1
+    secrets: inherit
+    with:
+      python-version: "3.12"
+      run-npm-audit: true
+
+  scorecard:
+    uses: Quantum-L9/l9-ci-core/.github/workflows/scorecard.yml@v1
+    secrets: inherit

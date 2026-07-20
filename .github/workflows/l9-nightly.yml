@@ -1,0 +1,14 @@
+# Quantum-L9 org starter — Nightly scheduled validation and dependency freshness check. Calls l9-ci-core kernel; do not add logic here.
+name: "L9 Nightly"
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  l9_nightly:
+    uses: Quantum-L9/l9-ci-core/.github/workflows/nightly.yml@v1
+    secrets: inherit
+    with:
+      python-version: "3.12"
+      run-extended-tests: true

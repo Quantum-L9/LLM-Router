@@ -1,0 +1,13 @@
+# Quantum-L9 org starter — Versioned release build and PyPI publish. Calls l9-ci-core kernel; do not add logic here.
+name: "L9 Release"
+on:
+  push:
+    tags: ['v*.*.*']
+
+jobs:
+  l9_release:
+    uses: Quantum-L9/l9-ci-core/.github/workflows/release-publish.yml@v1
+    secrets: inherit
+    with:
+      python-version: "3.12"
+      publish-to-pypi: true

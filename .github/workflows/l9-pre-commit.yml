@@ -1,0 +1,13 @@
+# Quantum-L9 org starter — Pre-commit hook enforcement in CI (ruff, mypy, hooks). Calls l9-ci-core kernel; do not add logic here.
+name: "L9 Pre-Commit CI"
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  l9_pre_commit:
+    uses: Quantum-L9/l9-ci-core/.github/workflows/pre-commit-ci.yml@v1
+    secrets: inherit
+    with:
+      python-version: "3.12"
