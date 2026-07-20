@@ -1,0 +1,2 @@
+import { Provider, type LLMResponse } from '../types.js';
+export class OpenRouterClient { constructor(_apiKey: string, _appName?: string) {} async complete(config: {model: string}, _system: string, _user: string): Promise<LLMResponse> { return { content: '', model: config.model, provider: Provider.OPENROUTER, inputTokens: 0, outputTokens: 0, totalTokens: 0, cost: 0, latencyMs: 0, cached: false }; } async completeWithFallback(config: {model: string}, _fallbacks: unknown[], system: string, user: string) { return this.complete(config, system, user); } }
