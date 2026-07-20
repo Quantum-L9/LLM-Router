@@ -119,7 +119,7 @@ jobs:
 
       - name: Validate canonical bundle
         if: steps.gov.outputs.enabled == 'true'
-        uses: Quantum-L9/l9-ci-core/.github/actions/validate-bundle@54a2f2fc8d060674d544fab14388bb5eff6b8e78
+        uses: Quantum-L9/l9-ci-core/.github/actions/validate-bundle@d2c2cd7f7251632825c53b8ed31570ba5d8add26
         with:
           executable: ${{ steps.sdk.outputs.executable }}
           bundle: .l9/runtime/${{ env.L9_MATRIX_ID }}/finding-bundle.json
