@@ -26,7 +26,6 @@ import {
   TaskComplexity,
   TaskType,
   VisionConfig,
-  LLMResponse,
 } from '../types.js';
 
 // ═══════════════════════════════════════════════════════════════

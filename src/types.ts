@@ -47,10 +47,16 @@ export enum GeneralModel {
   O1 = 'openai/o1',
   O3 = 'openai/o3',
 
-  // Vision tier — visual QA, screenshot analysis
+  // Vision tier — visual QA, screenshot analysis. These intentionally alias
+  // the base-tier model IDs above: OpenRouter serves the same underlying
+  // multimodal model for both the text and vision use case, so the "vision"
+  // member exists only to make call sites self-documenting, not to select a
+  // distinct model ID (see matrices/general-matrix.ts cost-model comment).
+  /* eslint-disable @typescript-eslint/no-duplicate-enum-values -- intentional alias to base model id, see comment above */
   GPT4O_VISION = 'openai/gpt-4o',
   CLAUDE_SONNET_VISION = 'anthropic/claude-sonnet-4',
   GEMINI_FLASH_VISION = 'google/gemini-2.5-flash',
+  /* eslint-enable @typescript-eslint/no-duplicate-enum-values */
 }
 
 // ═══════════════════════════════════════════════════════════════
