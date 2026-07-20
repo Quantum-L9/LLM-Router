@@ -1,9 +1,230 @@
-export enum Provider { OPENROUTER = 'openrouter', PERPLEXITY = 'perplexity' }
-export enum SonarModel { SONAR = 'sonar', SONAR_PRO = 'sonar-pro', SONAR_REASONING = 'sonar-reasoning', SONAR_REASONING_PRO = 'sonar-reasoning-pro', SONAR_DEEP_RESEARCH = 'sonar-deep-research' }
-export enum GeneralModel { GPT4O_MINI = 'openai/gpt-4o-mini', GPT4O = 'openai/gpt-4o', CLAUDE_HAIKU = 'anthropic/claude-haiku-4', CLAUDE_SONNET = 'anthropic/claude-sonnet-4', CLAUDE_OPUS = 'anthropic/claude-opus-4', GEMINI_FLASH = 'google/gemini-2.5-flash', GEMINI_PRO = 'google/gemini-2.5-pro', O1 = 'openai/o1', O3 = 'openai/o3' }
+/** Core public contracts for the legacy L9 router. */
+export enum Provider {
+  OPENROUTER = 'openrouter',
+  PERPLEXITY = 'perplexity',
+  OPENAI_DIRECT = 'openai_direct',
+  ANTHROPIC_DIRECT = 'anthropic_direct',
+}
+
+export enum SonarModel {
+  SONAR = 'sonar',
+  SONAR_PRO = 'sonar-pro',
+  SONAR_REASONING = 'sonar-reasoning',
+  SONAR_REASONING_PRO = 'sonar-reasoning-pro',
+  SONAR_DEEP_RESEARCH = 'sonar-deep-research',
+}
+
+export enum GeneralModel {
+  GPT4O_MINI = 'openai/gpt-4o-mini',
+  GEMINI_FLASH = 'google/gemini-2.5-flash',
+  CLAUDE_HAIKU = 'anthropic/claude-haiku-4',
+  GPT4O = 'openai/gpt-4o',
+  CLAUDE_SONNET = 'anthropic/claude-sonnet-4',
+  GEMINI_PRO = 'google/gemini-2.5-pro',
+  CLAUDE_OPUS = 'anthropic/claude-opus-4',
+  O1 = 'openai/o1',
+  O3 = 'openai/o3',
+  // These aliases are retained for 1.x source compatibility.
+  // eslint-disable-next-line @typescript-eslint/no-duplicate-enum-values
+  GPT4O_VISION = 'openai/gpt-4o',
+  // eslint-disable-next-line @typescript-eslint/no-duplicate-enum-values
+  CLAUDE_SONNET_VISION = 'anthropic/claude-sonnet-4',
+  // eslint-disable-next-line @typescript-eslint/no-duplicate-enum-values
+  GEMINI_FLASH_VISION = 'google/gemini-2.5-flash',
+}
+
+export enum SearchContextSize { LOW = 'low', MEDIUM = 'medium', HIGH = 'high' }
+export enum SearchMode { WEB = 'web', ACADEMIC = 'academic', SEC = 'sec' }
+export enum RecencyFilter { HOUR = 'hour', DAY = 'day', WEEK = 'week', MONTH = 'month', YEAR = 'year', NONE = 'none' }
+export enum MessageStrategy { SYSTEM_USER = 'system_user', SYSTEM_USER_ASSISTANT = 'system_user_asst' }
 export enum TaskComplexity { TRIVIAL = 'trivial', LOW = 'low', MEDIUM = 'medium', HIGH = 'high', CRITICAL = 'critical' }
-export enum TaskType { CLASSIFICATION = 'classification', EXTRACTION = 'extraction', SCORING = 'scoring', CONTENT_GENERATION = 'content_generation', STRATEGIC_REASONING = 'strategic_reasoning', CODE_GENERATION = 'code_generation', COMPETITOR_RESEARCH = 'competitor_research', CITATION_CHECK = 'citation_check', FACT_VERIFICATION = 'fact_verification', MARKET_RESEARCH = 'market_research', LINK_PROSPECTING = 'link_prospecting', VISUAL_QA = 'visual_qa', SCREENSHOT_ANALYSIS = 'screenshot_analysis', LAYOUT_VALIDATION = 'layout_validation' }
-export interface TaskDescriptor { type: TaskType; complexity: TaskComplexity; clientId?: string; description?: string; expectedOutputTokens?: number; requiresSearch?: boolean; images?: string[] }
-export interface RouterConfig { perplexityApiKey: string; openrouterApiKey: string; appName?: string }
-export interface LLMResponse { content: string; model: string; provider: Provider; inputTokens: number; outputTokens: number; totalTokens: number; cost: number; latencyMs: number; cached: boolean; citations?: string[] }
-export interface RoutingDecision { taskId: string; clientId: string; taskType: TaskType; complexity: TaskComplexity; provider: Provider; model: string; estimatedCost: number; actualCost?: number; reason: string; timestamp: string }
+
+export const TASK_COMPLEXITY_RANK: Readonly<Record<TaskComplexity, number>> = Object.freeze({
+  [TaskComplexity.TRIVIAL]: 0,
+  [TaskComplexity.LOW]: 1,
+  [TaskComplexity.MEDIUM]: 2,
+  [TaskComplexity.HIGH]: 3,
+  [TaskComplexity.CRITICAL]: 4,
+});
+
+export function complexityRank(value: TaskComplexity): number {
+  return TASK_COMPLEXITY_RANK[value];
+}
+
+export enum TaskType {
+  CLASSIFICATION = 'classification',
+  EXTRACTION = 'extraction',
+  SCORING = 'scoring',
+  CONTENT_GENERATION = 'content_generation',
+  STRATEGIC_REASONING = 'strategic_reasoning',
+  CODE_GENERATION = 'code_generation',
+  COMPETITOR_RESEARCH = 'competitor_research',
+  CITATION_CHECK = 'citation_check',
+  FACT_VERIFICATION = 'fact_verification',
+  MARKET_RESEARCH = 'market_research',
+  LINK_PROSPECTING = 'link_prospecting',
+  VISUAL_QA = 'visual_qa',
+  SCREENSHOT_ANALYSIS = 'screenshot_analysis',
+  LAYOUT_VALIDATION = 'layout_validation',
+}
+
+export interface PerplexityConfig {
+  model: SonarModel;
+  searchContextSize: SearchContextSize;
+  searchMode: SearchMode;
+  recencyFilter: RecencyFilter;
+  messageStrategy: MessageStrategy;
+  temperature: number;
+  maxTokens: number;
+  domainFilter: string[];
+  variations: number;
+  reasoningEffort?: 'low' | 'medium' | 'high';
+  disableSearch: boolean;
+  estimatedCostPerCall: number;
+  resolutionReason: string;
+}
+
+export interface GeneralModelConfig {
+  model: GeneralModel;
+  provider: Provider;
+  temperature: number;
+  maxTokens: number;
+  responseFormat?: 'json' | 'text';
+  estimatedCostPerCall: number;
+  resolutionReason: string;
+}
+
+export interface VisionConfig {
+  model: GeneralModel;
+  provider: Provider;
+  maxTokens: number;
+  detail: 'low' | 'high' | 'auto';
+  estimatedCostPerCall: number;
+  resolutionReason: string;
+}
+
+export interface TaskDescriptor {
+  type: TaskType;
+  complexity: TaskComplexity;
+  expectedOutputTokens?: number;
+  requiresReasoning?: boolean;
+  requiresSearch?: boolean;
+  recency?: RecencyFilter;
+  domainFilter?: string[];
+  images?: string[];
+  viewport?: 'desktop' | 'mobile';
+  clientId?: string;
+  description?: string;
+}
+
+export interface BudgetState {
+  clientId: string;
+  monthlyBudget: number;
+  monthSpend: number;
+  weekSpend: number;
+  weekTarget: number;
+  todaySpend: number;
+  weeklyHardCeiling: number;
+  surgeAllowance: boolean;
+  remainingMonthly: number;
+  remainingWeekly: number;
+  throttleLevel: 'none' | 'soft' | 'hard';
+  reservedSpend: number;
+  activeReservations: number;
+}
+
+export interface BudgetConfig {
+  monthlyBudgetPerClient: number;
+  weeklyTarget: number;
+  weeklyHardCeiling: number;
+  globalMonthlyHardCeiling: number;
+  surgeThreshold: number;
+}
+
+export interface BudgetReservation {
+  id: string;
+  clientId: string;
+  estimatedCost: number;
+  createdAt: string;
+}
+
+export interface LLMResponse {
+  content: string;
+  model: string;
+  provider: Provider;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cost: number;
+  latencyMs: number;
+  cached: boolean;
+  citations?: string[];
+  searchResults?: Record<string, unknown>[];
+  requestId?: string;
+  finishReason?: string;
+}
+
+export interface RouterConfig {
+  perplexityApiKey: string;
+  openrouterApiKey: string;
+  appName?: string;
+  budget?: Partial<BudgetConfig>;
+  circuitBreaker?: Partial<CircuitBreakerConfig>;
+  providerTimeoutMs?: number;
+  /** Must remain zero so every provider attempt is visible to router accounting. */
+  providerMaxRetries?: 0;
+}
+
+export interface RoutingResolution {
+  taskType: TaskType;
+  complexity: TaskComplexity;
+  provider: Provider;
+  model: GeneralModel | SonarModel;
+  estimatedCost: number;
+  reason: string;
+}
+
+export interface RoutingDecision extends RoutingResolution {
+  taskId: string;
+  clientId: string;
+  actualCost?: number;
+  latencyMs?: number;
+  timestamp: string;
+  downgraded?: boolean;
+  downgradedFrom?: GeneralModel | SonarModel;
+}
+
+export interface CircuitBreakerState {
+  provider: Provider;
+  state: 'closed' | 'open' | 'half-open';
+  failureCount: number;
+  lastFailure?: Date;
+  nextRetryAt?: Date;
+  probeInFlight: boolean;
+}
+
+export interface CircuitBreakerConfig {
+  failureThreshold: number;
+  openDurationMs: number;
+}
+
+export type ProviderFailureKind =
+  | 'network'
+  | 'timeout'
+  | 'rate_limit'
+  | 'server'
+  | 'client'
+  | 'cancelled'
+  | 'local'
+  | 'unknown';
+
+export interface ProviderErrorMetadata {
+  provider: Provider;
+  kind: ProviderFailureKind;
+  retryable: boolean;
+  status?: number;
+  code?: string;
+  requestId?: string;
+  retryAfterMs?: number;
+  cause?: unknown;
+}

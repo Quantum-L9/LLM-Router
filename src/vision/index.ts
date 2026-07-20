@@ -1,8 +1,56 @@
-import { GeneralModel, Provider, TaskComplexity, TaskType } from '../types.js';
-export interface ViewportConfig { name: string; width: number; height: number; deviceScaleFactor: number; isMobile: boolean }
-export interface VisionConfig { model: GeneralModel; provider: Provider; maxTokens: number; detail: 'low' | 'high' | 'auto'; estimatedCostPerCall: number; resolutionReason: string }
+import {
+  GeneralModel,
+  Provider,
+  TaskComplexity,
+  TaskType,
+  complexityRank,
+  type VisionConfig,
+} from '../types.js';
+
+export interface ViewportConfig { name: string; width: number; height: number; deviceScaleFactor: number; isMobile: boolean; userAgent?: string }
 export interface VisualQATask { prompt: string; images: string[]; viewport: ViewportConfig; config: VisionConfig }
 export interface FullSiteQAConfig { pages: string[]; viewports: ViewportConfig[]; competitorUrl?: string; conversionAudit: boolean }
-export const VIEWPORTS: Record<string, ViewportConfig> = { desktop_1440: { name: 'Desktop 1440', width: 1440, height: 900, deviceScaleFactor: 1, isMobile: false }, mobile_iphone: { name: 'iPhone', width: 393, height: 852, deviceScaleFactor: 3, isMobile: true } };
-export function resolveVisionConfig(_type: TaskType, complexity: TaskComplexity): VisionConfig { return { model: complexity >= TaskComplexity.HIGH ? GeneralModel.CLAUDE_SONNET : GeneralModel.GPT4O, provider: Provider.OPENROUTER, maxTokens: 2048, detail: 'auto', estimatedCostPerCall: 0.02, resolutionReason: 'vision' }; }
-export function generateFullSiteQAPlan(config: FullSiteQAConfig): VisualQATask[] { return config.pages.flatMap(page => config.viewports.map(viewport => ({ prompt: 'Analyze screenshot', images: [page], viewport, config: resolveVisionConfig(TaskType.VISUAL_QA, TaskComplexity.MEDIUM) }))); }
+
+export const VIEWPORTS: Record<string, ViewportConfig> = Object.freeze({
+  desktop_1920: { name: 'Desktop 1920x1080', width: 1920, height: 1080, deviceScaleFactor: 1, isMobile: false },
+  desktop_1440: { name: 'Desktop 1440x900', width: 1440, height: 900, deviceScaleFactor: 1, isMobile: false },
+  tablet_ipad: { name: 'iPad 768x1024', width: 768, height: 1024, deviceScaleFactor: 2, isMobile: true },
+  mobile_iphone: { name: 'iPhone 393x852', width: 393, height: 852, deviceScaleFactor: 3, isMobile: true },
+  mobile_android: { name: 'Pixel 412x915', width: 412, height: 915, deviceScaleFactor: 2.625, isMobile: true },
+});
+
+export const VISUAL_QA_PROMPTS = Object.freeze({
+  layout_validation: 'Review the screenshot for alignment, overlap, spacing, readability, broken images, CTA visibility, navigation, responsiveness, professionalism, and brand consistency. Return JSON.',
+  competitor_comparison: 'Compare our screenshot with the competitor for professionalism, CTA clarity, trust, readability, responsiveness, and first impression. Return JSON.',
+  conversion_audit: 'Audit the screenshot for value proposition, above-fold CTA, trust, form friction, social proof, urgency, navigation, and distraction. Return JSON.',
+});
+
+export function resolveVisionConfig(
+  taskType: TaskType.VISUAL_QA | TaskType.SCREENSHOT_ANALYSIS | TaskType.LAYOUT_VALIDATION,
+  complexity: TaskComplexity,
+  imageCount = 1,
+): VisionConfig {
+  if (complexityRank(complexity) <= complexityRank(TaskComplexity.LOW) && imageCount === 1) {
+    return { model: GeneralModel.GEMINI_FLASH_VISION, provider: Provider.OPENROUTER, maxTokens: 1024, detail: 'low', estimatedCostPerCall: 0.001, resolutionReason: 'Quick visual check' };
+  }
+  if (imageCount > 1) return { model: GeneralModel.CLAUDE_SONNET_VISION, provider: Provider.OPENROUTER, maxTokens: 2048, detail: 'high', estimatedCostPerCall: 0.03, resolutionReason: 'Multi-image comparison' };
+  if (taskType === TaskType.LAYOUT_VALIDATION || complexityRank(complexity) >= complexityRank(TaskComplexity.HIGH)) return { model: GeneralModel.GPT4O_VISION, provider: Provider.OPENROUTER, maxTokens: 2048, detail: 'high', estimatedCostPerCall: 0.02, resolutionReason: 'Detailed layout analysis' };
+  return { model: GeneralModel.GPT4O_VISION, provider: Provider.OPENROUTER, maxTokens: 1536, detail: 'auto', estimatedCostPerCall: 0.015, resolutionReason: 'Standard visual analysis' };
+}
+
+export function buildLayoutValidationTask(screenshotUrl: string, viewport: ViewportConfig, complexity: TaskComplexity = TaskComplexity.MEDIUM): VisualQATask {
+  return { prompt: VISUAL_QA_PROMPTS.layout_validation, images: [screenshotUrl], viewport, config: resolveVisionConfig(TaskType.LAYOUT_VALIDATION, complexity, 1) };
+}
+export function buildCompetitorComparisonTask(ours: string, competitor: string, viewport: ViewportConfig): VisualQATask {
+  return { prompt: VISUAL_QA_PROMPTS.competitor_comparison, images: [ours, competitor], viewport, config: resolveVisionConfig(TaskType.SCREENSHOT_ANALYSIS, TaskComplexity.HIGH, 2) };
+}
+export function buildConversionAuditTask(screenshotUrl: string, viewport: ViewportConfig): VisualQATask {
+  return { prompt: VISUAL_QA_PROMPTS.conversion_audit, images: [screenshotUrl], viewport, config: resolveVisionConfig(TaskType.VISUAL_QA, TaskComplexity.MEDIUM, 1) };
+}
+export function generateFullSiteQAPlan(config: FullSiteQAConfig): VisualQATask[] {
+  const tasks: VisualQATask[] = [];
+  for (const page of config.pages) for (const viewport of config.viewports) tasks.push(buildLayoutValidationTask(page, viewport));
+  if (config.competitorUrl) for (const page of config.pages.slice(0, 3)) tasks.push(buildCompetitorComparisonTask(page, config.competitorUrl, VIEWPORTS.desktop_1440));
+  if (config.conversionAudit) for (const page of config.pages.slice(0, 2)) tasks.push(buildConversionAuditTask(page, VIEWPORTS.mobile_iphone));
+  return tasks;
+}
