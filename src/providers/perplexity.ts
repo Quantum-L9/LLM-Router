@@ -50,7 +50,7 @@ export class PerplexityClient implements PerplexityClientLike {
     const settled = await Promise.allSettled(Array.from({ length: config.variations }, () => this.complete(config, systemPrompt, userPrompt, assistantContext, signal)));
     const successes = settled.filter((entry): entry is PromiseFulfilledResult<LLMResponse> => entry.status === 'fulfilled').map(entry => entry.value);
     if (successes.length === 0) throw new ProviderRequestError('All Perplexity consensus variations failed', { provider: Provider.PERPLEXITY, kind: 'server', retryable: true, cause: settled });
-    return { best: successes.reduce((best, candidate) => candidate.content.length > best.content.length ? candidate : best), all: successes, consensusScore: successes.length / config.variations };
+    return { best: successes.reduce((best, candidate) => candidate.content.length > best.content.length ? candidate : best, successes[0]), all: successes, consensusScore: successes.length / config.variations };
   }
 }
 
