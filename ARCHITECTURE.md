@@ -19,3 +19,7 @@ Provider clients live under `src/providers/`. Production modules outside `src/in
 ## State scope
 
 The built-in budget tracker and circuit breaker are process-local. They prevent concurrent overspend and provider stampedes inside one process. Distributed enforcement requires an external persistence adapter and is intentionally not claimed here.
+
+## Runtime floor
+
+The package runtime floor is Node 20.19.0. Type definitions track the Node 20 line so compilation cannot silently authorize APIs that are unavailable to supported consumers. CI also exercises the current active LTS as a secondary runtime.
