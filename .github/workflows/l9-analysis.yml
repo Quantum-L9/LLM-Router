@@ -85,7 +85,7 @@ jobs:
         if: steps.gov.outputs.enabled == 'true'
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip semgrep
+          python -m pip install 'pip==26.1.2' 'semgrep==1.170.1'
           mkdir -p "artifacts/raw/semgrep/${L9_MATRIX_ID}"
           # Node.js repo ruleset — JS/TS only (no p/python; this repo is TypeScript).
           semgrep scan \
