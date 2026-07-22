@@ -12,7 +12,7 @@ try {
   const artifact = packed[0];
   tarball = join(root, artifact.filename);
   const unexpected = artifact.files.map(entry => entry.path).filter(path => !(
-    path === 'package.json' || path === 'README.md' || path === 'ARCHITECTURE.md' || path.startsWith('dist/')
+    path === 'package.json' || path === 'README.md' || path === 'ARCHITECTURE.md' || path === 'RUNBOOK.md' || path.startsWith('dist/')
   ));
   if (unexpected.length > 0) throw new Error(`Unexpected package files: ${unexpected.join(', ')}`);
 
