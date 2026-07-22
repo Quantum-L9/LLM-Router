@@ -16,40 +16,25 @@
   "keywords": ["llm", "router", "openrouter", "perplexity", "anthropic", "openai", "multi-provider", "budget"],
   "author": "L9 Systems",
   "license": "PROPRIETARY",
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
-  },
+  "publishConfig": {"registry": "https://npm.pkg.github.com"},
   "dependencies": {
     "openai": "^4.50.0",
-    "zod": "^3.23.0",
-    "pino": "^9.0.0"
+    "pino": "^9.0.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
-    "typescript": "^5.5.0",
-    "vitest": "^2.0.0",
+    "@eslint/js": "^9.39.5",
     "@types/node": "^22.0.0",
     "eslint": "^9.0.0",
-    "typescript-eslint": "^8.64.0"
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.64.0",
+    "vitest": "^2.0.0"
   },
-  "engines": {
-    "node": ">=20.0.0"
-  },
+  "engines": {"node": ">=20.0.0"},
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./perplexity": {
-      "types": "./dist/providers/perplexity.d.ts",
-      "import": "./dist/providers/perplexity.js"
-    },
-    "./openrouter": {
-      "types": "./dist/providers/openrouter.d.ts",
-      "import": "./dist/providers/openrouter.js"
-    },
-    "./vision": {
-      "types": "./dist/vision/index.d.ts",
-      "import": "./dist/vision/index.js"
-    }
+    ".": {"types": "./dist/index.d.ts", "import": "./dist/index.js"},
+    "./perplexity": {"types": "./dist/providers/perplexity.d.ts", "import": "./dist/providers/perplexity.js"},
+    "./openrouter": {"types": "./dist/providers/openrouter.d.ts", "import": "./dist/providers/openrouter.js"},
+    "./vision": {"types": "./dist/vision/index.d.ts", "import": "./dist/vision/index.js"}
   }
 }

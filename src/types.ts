@@ -1,15 +1,4 @@
-/**
- * @l9_meta
- * @module @quantum-l9/llm-router
- * @file src/types.ts
- * @purpose Core type definitions for the multi-provider LLM routing system
- * @shared_by All L9 bots (SEO Bot, Website Factory, future bots)
- */
-
-// ═══════════════════════════════════════════════════════════════
-// PROVIDER ENUMS
-// ═══════════════════════════════════════════════════════════════
-
+/** Core public contracts for the legacy L9 router. */
 export enum Provider {
   OPENROUTER = 'openrouter',
   PERPLEXITY = 'perplexity',
@@ -17,11 +6,6 @@ export enum Provider {
   ANTHROPIC_DIRECT = 'anthropic_direct',
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MODEL REGISTRIES
-// ═══════════════════════════════════════════════════════════════
-
-/** Perplexity Sonar model tiers — aligned with Enrichment.Inference.Engine */
 export enum SonarModel {
   SONAR = 'sonar',
   SONAR_PRO = 'sonar-pro',
@@ -30,106 +14,60 @@ export enum SonarModel {
   SONAR_DEEP_RESEARCH = 'sonar-deep-research',
 }
 
-/** OpenRouter-accessible models — the general-purpose matrix */
 export enum GeneralModel {
-  // Fast tier (< $1/M tokens) — classification, extraction, scoring
   GPT4O_MINI = 'openai/gpt-4o-mini',
   GEMINI_FLASH = 'google/gemini-2.5-flash',
   CLAUDE_HAIKU = 'anthropic/claude-haiku-4',
-
-  // Strategic tier ($1-10/M tokens) — generation, reasoning, planning
   GPT4O = 'openai/gpt-4o',
   CLAUDE_SONNET = 'anthropic/claude-sonnet-4',
   GEMINI_PRO = 'google/gemini-2.5-pro',
-
-  // Critical tier ($10+/M tokens) — complex strategy, multi-step reasoning
   CLAUDE_OPUS = 'anthropic/claude-opus-4',
   O1 = 'openai/o1',
   O3 = 'openai/o3',
-
-  // Vision tier — visual QA, screenshot analysis. These intentionally alias
-  // the base-tier model IDs above: OpenRouter serves the same underlying
-  // multimodal model for both the text and vision use case, so the "vision"
-  // member exists only to make call sites self-documenting, not to select a
-  // distinct model ID (see matrices/general-matrix.ts cost-model comment).
-  /* eslint-disable @typescript-eslint/no-duplicate-enum-values -- intentional alias to base model id, see comment above */
+  // These aliases are retained for 1.x source compatibility.
+  // eslint-disable-next-line @typescript-eslint/no-duplicate-enum-values
   GPT4O_VISION = 'openai/gpt-4o',
+  // eslint-disable-next-line @typescript-eslint/no-duplicate-enum-values
   CLAUDE_SONNET_VISION = 'anthropic/claude-sonnet-4',
+  // eslint-disable-next-line @typescript-eslint/no-duplicate-enum-values
   GEMINI_FLASH_VISION = 'google/gemini-2.5-flash',
-  /* eslint-enable @typescript-eslint/no-duplicate-enum-values */
 }
 
-// ═══════════════════════════════════════════════════════════════
-// PERPLEXITY SEARCH DIMENSIONS (from Enrichment.Inference.Engine)
-// ═══════════════════════════════════════════════════════════════
+export enum SearchContextSize { LOW = 'low', MEDIUM = 'medium', HIGH = 'high' }
+export enum SearchMode { WEB = 'web', ACADEMIC = 'academic', SEC = 'sec' }
+export enum RecencyFilter { HOUR = 'hour', DAY = 'day', WEEK = 'week', MONTH = 'month', YEAR = 'year', NONE = 'none' }
+export enum MessageStrategy { SYSTEM_USER = 'system_user', SYSTEM_USER_ASSISTANT = 'system_user_asst' }
+export enum TaskComplexity { TRIVIAL = 'trivial', LOW = 'low', MEDIUM = 'medium', HIGH = 'high', CRITICAL = 'critical' }
 
-export enum SearchContextSize {
-  LOW = 'low',
-  MEDIUM = 'medium',
-  HIGH = 'high',
+export const TASK_COMPLEXITY_RANK: Readonly<Record<TaskComplexity, number>> = Object.freeze({
+  [TaskComplexity.TRIVIAL]: 0,
+  [TaskComplexity.LOW]: 1,
+  [TaskComplexity.MEDIUM]: 2,
+  [TaskComplexity.HIGH]: 3,
+  [TaskComplexity.CRITICAL]: 4,
+});
+
+export function complexityRank(value: TaskComplexity): number {
+  return TASK_COMPLEXITY_RANK[value];
 }
 
-export enum SearchMode {
-  WEB = 'web',
-  ACADEMIC = 'academic',
-  SEC = 'sec',
-}
-
-export enum RecencyFilter {
-  HOUR = 'hour',
-  DAY = 'day',
-  WEEK = 'week',
-  MONTH = 'month',
-  YEAR = 'year',
-  NONE = 'none',
-}
-
-export enum MessageStrategy {
-  SYSTEM_USER = 'system_user',
-  SYSTEM_USER_ASSISTANT = 'system_user_asst',
-}
-
-// ═══════════════════════════════════════════════════════════════
-// TASK CLASSIFICATION
-// ═══════════════════════════════════════════════════════════════
-
-/** Task complexity levels — determines model tier selection */
-export enum TaskComplexity {
-  TRIVIAL = 'trivial',     // Boolean check, simple extraction
-  LOW = 'low',             // Classification, scoring, short generation
-  MEDIUM = 'medium',       // Content generation, summarization
-  HIGH = 'high',           // Strategic reasoning, multi-step planning
-  CRITICAL = 'critical',   // Architecture decisions, full strategy pivots
-}
-
-/** Task type categories — determines provider selection */
 export enum TaskType {
-  // Pure generation (no search needed)
   CLASSIFICATION = 'classification',
   EXTRACTION = 'extraction',
   SCORING = 'scoring',
   CONTENT_GENERATION = 'content_generation',
   STRATEGIC_REASONING = 'strategic_reasoning',
   CODE_GENERATION = 'code_generation',
-
-  // Search-grounded (Perplexity preferred)
   COMPETITOR_RESEARCH = 'competitor_research',
   CITATION_CHECK = 'citation_check',
   FACT_VERIFICATION = 'fact_verification',
   MARKET_RESEARCH = 'market_research',
   LINK_PROSPECTING = 'link_prospecting',
-
-  // Vision (requires multimodal)
   VISUAL_QA = 'visual_qa',
   SCREENSHOT_ANALYSIS = 'screenshot_analysis',
   LAYOUT_VALIDATION = 'layout_validation',
 }
 
-// ═══════════════════════════════════════════════════════════════
-// RESOLVED CONFIGURATIONS
-// ═══════════════════════════════════════════════════════════════
-
-/** Resolved Perplexity search configuration */
 export interface PerplexityConfig {
   model: SonarModel;
   searchContextSize: SearchContextSize;
@@ -140,13 +78,12 @@ export interface PerplexityConfig {
   maxTokens: number;
   domainFilter: string[];
   variations: number;
-  reasoningEffort?: string;
+  reasoningEffort?: 'low' | 'medium' | 'high';
   disableSearch: boolean;
   estimatedCostPerCall: number;
   resolutionReason: string;
 }
 
-/** Resolved general model configuration */
 export interface GeneralModelConfig {
   model: GeneralModel;
   provider: Provider;
@@ -157,7 +94,6 @@ export interface GeneralModelConfig {
   resolutionReason: string;
 }
 
-/** Resolved vision configuration */
 export interface VisionConfig {
   model: GeneralModel;
   provider: Provider;
@@ -167,60 +103,19 @@ export interface VisionConfig {
   resolutionReason: string;
 }
 
-/** Union of all resolved configs */
-export type ResolvedConfig = PerplexityConfig | GeneralModelConfig | VisionConfig;
-
-// ═══════════════════════════════════════════════════════════════
-// TASK DESCRIPTOR (input to the router)
-// ═══════════════════════════════════════════════════════════════
-
 export interface TaskDescriptor {
-  /** What type of task is this? */
   type: TaskType;
-  /** How complex is the reasoning required? */
   complexity: TaskComplexity;
-  /** Expected output token count (helps select model tier) */
   expectedOutputTokens?: number;
-  /** Does this task require multi-step reasoning? */
   requiresReasoning?: boolean;
-  /** Does this task need web search grounding? */
   requiresSearch?: boolean;
-  /** How recent must the search results be? */
   recency?: RecencyFilter;
-  /** Domain filter for Perplexity searches */
   domainFilter?: string[];
-  /** For vision tasks: the image URLs or base64 data */
   images?: string[];
-  /** For vision tasks: viewport type */
   viewport?: 'desktop' | 'mobile';
-  /** Client ID for budget tracking */
   clientId?: string;
-  /** Human-readable description for logging */
   description?: string;
 }
-
-// ═══════════════════════════════════════════════════════════════
-// ROUTING RESULT
-// ═══════════════════════════════════════════════════════════════
-
-export interface RoutingResult {
-  /** The resolved configuration to use */
-  config: ResolvedConfig;
-  /** Which provider handles this request */
-  provider: Provider;
-  /** Estimated cost for this call */
-  estimatedCost: number;
-  /** Why this route was chosen */
-  reason: string;
-  /** Fallback chain if primary fails */
-  fallbacks: ResolvedConfig[];
-  /** Was this request budget-gated? */
-  budgetGated: boolean;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// BUDGET
-// ═══════════════════════════════════════════════════════════════
 
 export interface BudgetState {
   clientId: string;
@@ -234,6 +129,8 @@ export interface BudgetState {
   remainingMonthly: number;
   remainingWeekly: number;
   throttleLevel: 'none' | 'soft' | 'hard';
+  reservedSpend: number;
+  activeReservations: number;
 }
 
 export interface BudgetConfig {
@@ -241,12 +138,15 @@ export interface BudgetConfig {
   weeklyTarget: number;
   weeklyHardCeiling: number;
   globalMonthlyHardCeiling: number;
-  surgeThreshold: number; // If week spend < this % of target by Thursday, allow surge
+  surgeThreshold: number;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// EXECUTION RESULT
-// ═══════════════════════════════════════════════════════════════
+export interface BudgetReservation {
+  id: string;
+  clientId: string;
+  estimatedCost: number;
+  createdAt: string;
+}
 
 export interface LLMResponse {
   content: string;
@@ -260,42 +160,39 @@ export interface LLMResponse {
   cached: boolean;
   citations?: string[];
   searchResults?: Record<string, unknown>[];
+  requestId?: string;
+  finishReason?: string;
 }
-
-// ═══════════════════════════════════════════════════════════════
-// ROUTER CONFIG (constructor input)
-// ═══════════════════════════════════════════════════════════════
 
 export interface RouterConfig {
   perplexityApiKey: string;
   openrouterApiKey: string;
   appName?: string;
   budget?: Partial<BudgetConfig>;
+  circuitBreaker?: Partial<CircuitBreakerConfig>;
+  providerTimeoutMs?: number;
+  /** Must remain zero so every provider attempt is visible to router accounting. */
+  providerMaxRetries?: 0;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ROUTING DECISION (audit log entry)
-// ═══════════════════════════════════════════════════════════════
-
-export interface RoutingDecision {
-  taskId: string;
-  clientId: string;
+export interface RoutingResolution {
   taskType: TaskType;
   complexity: TaskComplexity;
   provider: Provider;
-  model: GeneralModel | SonarModel | string;
+  model: GeneralModel | SonarModel;
   estimatedCost: number;
-  actualCost?: number;
-  latencyMs?: number;
   reason: string;
-  timestamp: string;
-  downgraded?: boolean;
-  downgradedFrom?: GeneralModel | SonarModel | string;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// CIRCUIT BREAKER
-// ═══════════════════════════════════════════════════════════════
+export interface RoutingDecision extends RoutingResolution {
+  taskId: string;
+  clientId: string;
+  actualCost?: number;
+  latencyMs?: number;
+  timestamp: string;
+  downgraded?: boolean;
+  downgradedFrom?: GeneralModel | SonarModel;
+}
 
 export interface CircuitBreakerState {
   provider: Provider;
@@ -303,4 +200,31 @@ export interface CircuitBreakerState {
   failureCount: number;
   lastFailure?: Date;
   nextRetryAt?: Date;
+  probeInFlight: boolean;
+}
+
+export interface CircuitBreakerConfig {
+  failureThreshold: number;
+  openDurationMs: number;
+}
+
+export type ProviderFailureKind =
+  | 'network'
+  | 'timeout'
+  | 'rate_limit'
+  | 'server'
+  | 'client'
+  | 'cancelled'
+  | 'local'
+  | 'unknown';
+
+export interface ProviderErrorMetadata {
+  provider: Provider;
+  kind: ProviderFailureKind;
+  retryable: boolean;
+  status?: number;
+  code?: string;
+  requestId?: string;
+  retryAfterMs?: number;
+  cause?: unknown;
 }

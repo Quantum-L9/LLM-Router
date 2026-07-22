@@ -1,23 +1,29 @@
-// @ts-check
+import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
-
-// ESLint v9 flat config. This repo is ESM (`"type": "module"`), TypeScript-only
-// (src/ + tests/), with no runtime bundler config to lint.
 export default tseslint.config(
-  {
-    ignores: ['dist/**', 'node_modules/**', 'src/docs/**'],
-  },
+  { ignores: ['dist/**', 'node_modules/**'] },
+  eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['**/*.ts'],
+    // CI hygiene: the repo's required ESLint check runs `eslint .` (whole
+    // tree), not just src/. Allow the conventional underscore prefix for
+    // intentionally-unused parameters and give Node scripts their globals.
     rules: {
-      // Router config objects intentionally cast a resolved model string back
-      // onto a typed field when applying a budget downgrade (see src/index.ts).
-      '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-unused-vars': [
-        'error',
-        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
-      ],
+      '@typescript-eslint/no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+      }],
+    },
+  },
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        URL: 'readonly',
+      },
     },
   },
 );
