@@ -26,4 +26,19 @@ export default tseslint.config(
       },
     },
   },
+  {
+    // Provider boundary: production code must route provider access through
+    // src/index.ts. Required by scripts/verify-eslint-boundary.mjs (CI
+    // `lint:boundary` step at this stage).
+    files: ['src/**/*.ts'],
+    ignores: ['src/index.ts', 'src/providers/**'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [{
+          group: ['**/providers/*', '**/providers/**'],
+          message: 'Provider clients are an I/O boundary. Route production execution through src/index.ts.',
+        }],
+      }],
+    },
+  },
 );
