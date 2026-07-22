@@ -93,7 +93,7 @@ export class PerplexityClient implements PerplexityClientLike {
       });
     }
     return {
-      best: successes.reduce((best, candidate) => candidate.content.length > best.content.length ? candidate : best),
+      best: successes.reduce((best, candidate) => candidate.content.length > best.content.length ? candidate : best, successes[0]),
       all: successes,
       consensusScore: successes.length / config.variations,
       aggregate: aggregateResponses(successes),
@@ -108,7 +108,7 @@ function aggregateResponses(responses: LLMResponse[]): PerplexityConsensusResult
     totalTokens: responses.reduce((total, response) => total + response.totalTokens, 0),
     cost: Math.round(responses.reduce((total, response) => total + response.cost, 0) * 1_000_000) / 1_000_000,
     latencyMs: Math.max(...responses.map(response => response.latencyMs)),
-    citations: [...new Set(responses.flatMap(response => response.citations ?? []))].sort(),
+    citations: [...new Set(responses.flatMap(response => response.citations ?? []))].sort((left, right) => left.localeCompare(right)),
   };
 }
 

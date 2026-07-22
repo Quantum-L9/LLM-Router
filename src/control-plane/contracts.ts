@@ -6,7 +6,7 @@ const routeIdentity = z.string().regex(/^route_[0-9a-f]{32}$/);
 const planIdentity = z.string().regex(/^plan_[0-9a-f]{32}$/);
 const sortedUnique = <T extends z.ZodTypeAny>(item: T) => z.array(item).superRefine((values, context) => {
   const serialized = values.map(value => typeof value === 'string' ? value : JSON.stringify(value));
-  const expected = [...new Set(serialized)].sort();
+  const expected = [...new Set(serialized)].sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
   if (serialized.length !== expected.length || serialized.some((value, index) => value !== expected[index])) context.addIssue({ code: 'custom', message: 'array must be sorted and unique' });
 });
 

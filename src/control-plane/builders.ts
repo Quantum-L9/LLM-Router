@@ -49,7 +49,7 @@ function normalizeInput<T>(value: T, artifact: string): T {
 }
 
 function normalizeString(value: string): string { return value.normalize('NFC'); }
-function sortedUniqueStrings(values: string[]): string[] { return [...new Set(values.map(normalizeString))].sort(); }
+function sortedUniqueStrings(values: string[]): string[] { return [...new Set(values.map(normalizeString))].sort((left, right) => left < right ? -1 : left > right ? 1 : 0); }
 function sortedUniqueTargets<T extends { provider: string; model: string }>(values: T[]): T[] {
   const normalized = values.map(value => ({ ...value, provider: normalizeString(value.provider), model: normalizeString(value.model) }));
   return [...new Map(normalized.map(value => [`${value.provider}\u0000${value.model}`, value])).values()].sort((left, right) => left.provider === right.provider ? (left.model < right.model ? -1 : left.model > right.model ? 1 : 0) : (left.provider < right.provider ? -1 : 1)) as T[];
