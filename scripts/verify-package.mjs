@@ -1,18 +1,25 @@
 import { execFileSync } from 'node:child_process';
-import { delimiter } from 'node:path';
 
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-// Invoke npm via the absolute Node binary + npm CLI script (avoids PATH lookup; sonar javascript:S4036).
-const npmCliPath = process.env.npm_execpath;
-const fixedPath = ['/usr/local/bin', '/usr/bin', '/bin'].join(delimiter);
-const runNpm = (args, options = {}) => npmCliPath
-  ? execFileSync(process.execPath, [npmCliPath, ...args], options)
-  : execFileSync('npm', args, { ...options, env: { ...(options.env ?? process.env), PATH: fixedPath } });
+// Invoke npm via the absolute Node binary + an absolute npm CLI script path.
+// No bare-name spawn and no PATH lookup anywhere (sonar javascript:S4036).
+const resolveNpmCli = () => {
+  if (process.env.npm_execpath) return process.env.npm_execpath;
+  const candidates = [
+    join(dirname(process.execPath), '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ];
+  for (const candidate of candidates) if (existsSync(candidate)) return candidate;
+  throw new Error('Unable to locate the npm CLI script; set npm_execpath.');
+};
+const npmCliPath = resolveNpmCli();
+const runNpm = (args, options = {}) => execFileSync(process.execPath, [npmCliPath, ...args], options);
 const workspace = await mkdtemp(join(tmpdir(), 'llm-router-package-'));
 let tarball;
 try {
