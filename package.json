@@ -13,9 +13,10 @@
     "lint": "eslint src/",
     "verify:types": "tsc --noEmit",
     "verify:package": "node scripts/verify-package.mjs",
-    "verify:all": "npm run build && npm run verify:types && npm run lint && npm run lint:boundary && npm test && npm audit --audit-level=high --omit=dev && npm run verify:package",
+    "verify:all": "npm run build && npm run verify:types && npm run verify:declarations && npm run lint && npm run lint:boundary && npm test && npm audit --audit-level=high --omit=dev && npm run verify:package",
     "test:inventory": "node scripts/test-inventory.mjs",
-    "lint:boundary": "node scripts/verify-eslint-boundary.mjs"
+    "lint:boundary": "node scripts/verify-eslint-boundary.mjs",
+    "verify:declarations": "npm run build && tsc -p scripts/fixtures/declaration-consumer/tsconfig.json"
   },
   "keywords": [
     "llm",
@@ -40,7 +41,7 @@
     "@eslint/js": "^10.0.1",
     "@types/node": "^20.19.43",
     "eslint": "^10.7.0",
-    "typescript": "^5.5.0",
+    "typescript": "^6.0.3",
     "typescript-eslint": "^8.64.0",
     "vitest": "^4.1.10"
   },
