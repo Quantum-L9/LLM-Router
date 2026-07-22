@@ -110,9 +110,20 @@ export class L9LLMRouter {
         const config = resolvePerplexityConfig(task);
         if (!Object.values(SonarModel).includes(decision.model as SonarModel)) throw new Error('Perplexity route resolved a non-Sonar model');
         config.model = decision.model as SonarModel;
-        response = options?.consensus && config.variations > 1
-          ? (await this.perplexity.completeWithConsensus(config, systemPrompt, userPrompt, options.assistantContext, options.signal)).best
-          : await this.perplexity.complete(config, systemPrompt, userPrompt, options?.assistantContext, options?.signal);
+        if (options?.consensus && config.variations > 1) {
+          const consensus = await this.perplexity.completeWithConsensus(config, systemPrompt, userPrompt, options.assistantContext, options.signal);
+          response = {
+            ...consensus.best,
+            inputTokens: consensus.aggregate.inputTokens,
+            outputTokens: consensus.aggregate.outputTokens,
+            totalTokens: consensus.aggregate.totalTokens,
+            cost: consensus.aggregate.cost,
+            latencyMs: consensus.aggregate.latencyMs,
+            citations: consensus.aggregate.citations,
+          };
+        } else {
+          response = await this.perplexity.complete(config, systemPrompt, userPrompt, options?.assistantContext, options?.signal);
+        }
       } else if (VISION_TASKS.has(task.type) && images?.length) {
         const config = resolveVisionConfig(task.type as TaskType.VISUAL_QA | TaskType.SCREENSHOT_ANALYSIS | TaskType.LAYOUT_VALIDATION, task.complexity, images.length);
         config.model = decision.model as GeneralModel;

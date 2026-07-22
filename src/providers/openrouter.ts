@@ -1,24 +1,30 @@
-import OpenAI from 'openai';
 import { calculateOpenRouterCost } from '../pricing.js';
-import { classifyProviderError, ProviderRequestError } from '../provider-errors.js';
+import { classifyProviderError, ProviderRequestError, throwIfAborted } from '../provider-errors.js';
 import {
-  GeneralModel,
   Provider,
+  type GeneralModel,
   type GeneralModelConfig,
   type LLMResponse,
   type VisionConfig,
 } from '../types.js';
+import {
+  OpenAIChatTransport,
+  type ChatContentPart,
+  type ChatMessage,
+  type ChatTransport,
+} from './openai-transport.js';
+import { GeneralModel as GeneralModelValue } from '../types.js';
 
 const MODEL_IDS: Record<GeneralModel, string> = {
-  [GeneralModel.GPT4O_MINI]: 'openai/gpt-4o-mini',
-  [GeneralModel.GEMINI_FLASH]: 'google/gemini-2.5-flash',
-  [GeneralModel.CLAUDE_HAIKU]: 'anthropic/claude-haiku-4',
-  [GeneralModel.GPT4O]: 'openai/gpt-4o',
-  [GeneralModel.CLAUDE_SONNET]: 'anthropic/claude-sonnet-4',
-  [GeneralModel.GEMINI_PRO]: 'google/gemini-2.5-pro',
-  [GeneralModel.CLAUDE_OPUS]: 'anthropic/claude-opus-4',
-  [GeneralModel.O1]: 'openai/o1',
-  [GeneralModel.O3]: 'openai/o3',
+  [GeneralModelValue.GPT4O_MINI]: 'openai/gpt-4o-mini',
+  [GeneralModelValue.GEMINI_FLASH]: 'google/gemini-2.5-flash',
+  [GeneralModelValue.CLAUDE_HAIKU]: 'anthropic/claude-haiku-4',
+  [GeneralModelValue.GPT4O]: 'openai/gpt-4o',
+  [GeneralModelValue.CLAUDE_SONNET]: 'anthropic/claude-sonnet-4',
+  [GeneralModelValue.GEMINI_PRO]: 'google/gemini-2.5-pro',
+  [GeneralModelValue.CLAUDE_OPUS]: 'anthropic/claude-opus-4',
+  [GeneralModelValue.O1]: 'openai/o1',
+  [GeneralModelValue.O3]: 'openai/o3',
 };
 
 const MAX_INLINE_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -66,17 +72,14 @@ export function validateImageUrl(url: string): void {
   if (url.startsWith('data:')) {
     const match = SAFE_DATA_URI.exec(url);
     if (!match) throw new UnsafeImageUrlError('Image data URI must be a supported base64 image', url);
-    const estimatedBytes = Math.floor(match[2].length * 3 / 4);
-    if (estimatedBytes > MAX_INLINE_IMAGE_BYTES) throw new UnsafeImageUrlError('Inline image exceeds the 10 MiB limit', url);
+    if (Math.floor(match[2].length * 3 / 4) > MAX_INLINE_IMAGE_BYTES) throw new UnsafeImageUrlError('Inline image exceeds the 10 MiB limit', url);
     return;
   }
   let parsed: URL;
   try { parsed = new URL(url); } catch { throw new UnsafeImageUrlError('Image URL must be absolute', url); }
   if (parsed.protocol !== 'https:') throw new UnsafeImageUrlError('Image URL must use HTTPS', url);
   const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal') || isPrivateIpv4(host) || isPrivateIpv6(host)) {
-    throw new UnsafeImageUrlError('Image URL targets a private, loopback, link-local, or reserved address', url);
-  }
+  if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal') || isPrivateIpv4(host) || isPrivateIpv6(host)) throw new UnsafeImageUrlError('Image URL targets a private, loopback, link-local, or reserved address', url);
 }
 
 export interface OpenRouterClientLike {
@@ -86,37 +89,51 @@ export interface OpenRouterClientLike {
 }
 
 export class OpenRouterClient implements OpenRouterClientLike {
-  private readonly client: OpenAI;
-  constructor(apiKey: string, appName = 'L9-LLM-Router', private readonly timeoutMs = 60_000) {
-    this.client = new OpenAI({ apiKey, baseURL: 'https://openrouter.ai/api/v1', timeout: timeoutMs, maxRetries: 0, defaultHeaders: { 'HTTP-Referer': 'https://l9.systems', 'X-Title': appName } });
+  private readonly transport: ChatTransport;
+  constructor(apiKey: string, appName = 'L9-LLM-Router', timeoutMs = 60_000, transport?: ChatTransport) {
+    this.transport = transport ?? new OpenAIChatTransport({ apiKey, baseURL: 'https://openrouter.ai/api/v1', timeoutMs, maxRetries: 0, defaultHeaders: { 'HTTP-Referer': 'https://l9.systems', 'X-Title': appName } });
   }
 
   async complete(config: GeneralModelConfig, systemPrompt: string, userPrompt: string, signal?: AbortSignal): Promise<LLMResponse> {
+    throwIfAborted(signal, Provider.OPENROUTER);
     const started = Date.now();
+    const messages: ChatMessage[] = [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }];
     try {
-      const response = await this.client.chat.completions.create({ model: MODEL_IDS[config.model], messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], temperature: config.temperature, max_tokens: config.maxTokens, ...(config.responseFormat === 'json' ? { response_format: { type: 'json_object' as const } } : {}) }, { signal });
-      return { content: response.choices[0]?.message?.content ?? '', model: config.model, provider: Provider.OPENROUTER, inputTokens: response.usage?.prompt_tokens ?? 0, outputTokens: response.usage?.completion_tokens ?? 0, totalTokens: response.usage?.total_tokens ?? 0, cost: calculateOpenRouterCost(config.model, response.usage), latencyMs: Date.now() - started, cached: false, requestId: response._request_id ?? undefined, finishReason: response.choices[0]?.finish_reason ?? undefined };
+      const response = await this.transport.create({ model: MODEL_IDS[config.model], messages, temperature: config.temperature, max_tokens: config.maxTokens, ...(config.responseFormat === 'json' ? { response_format: { type: 'json_object' as const } } : {}) }, { signal });
+      return { content: response.choices[0]?.message?.content ?? '', model: config.model, provider: Provider.OPENROUTER, inputTokens: response.usage?.prompt_tokens ?? 0, outputTokens: response.usage?.completion_tokens ?? 0, totalTokens: response.usage?.total_tokens ?? 0, cost: calculateOpenRouterCost(config.model, response.usage), latencyMs: Date.now() - started, cached: false, requestId: response._request_id ?? response.id, finishReason: response.choices[0]?.finish_reason ?? undefined };
     } catch (error) { throw classifyProviderError(error, Provider.OPENROUTER); }
   }
 
   async completeWithVision(config: VisionConfig, systemPrompt: string, userPrompt: string, imageUrls: string[], signal?: AbortSignal): Promise<LLMResponse> {
+    throwIfAborted(signal, Provider.OPENROUTER);
     for (const url of imageUrls) validateImageUrl(url);
     const started = Date.now();
+    const content: ChatContentPart[] = [{ type: 'text', text: userPrompt }, ...imageUrls.map(url => ({ type: 'image_url' as const, image_url: { url, detail: config.detail } }))];
     try {
-      const content: OpenAI.Chat.ChatCompletionContentPart[] = [{ type: 'text', text: userPrompt }, ...imageUrls.map(url => ({ type: 'image_url' as const, image_url: { url, detail: config.detail } }))];
-      const response = await this.client.chat.completions.create({ model: MODEL_IDS[config.model], messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content }], temperature: 0.2, max_tokens: config.maxTokens }, { signal });
-      return { content: response.choices[0]?.message?.content ?? '', model: config.model, provider: Provider.OPENROUTER, inputTokens: response.usage?.prompt_tokens ?? 0, outputTokens: response.usage?.completion_tokens ?? 0, totalTokens: response.usage?.total_tokens ?? 0, cost: calculateOpenRouterCost(config.model, response.usage), latencyMs: Date.now() - started, cached: false, requestId: response._request_id ?? undefined, finishReason: response.choices[0]?.finish_reason ?? undefined };
+      const response = await this.transport.create({ model: MODEL_IDS[config.model], messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content }], temperature: 0.2, max_tokens: config.maxTokens }, { signal });
+      return { content: response.choices[0]?.message?.content ?? '', model: config.model, provider: Provider.OPENROUTER, inputTokens: response.usage?.prompt_tokens ?? 0, outputTokens: response.usage?.completion_tokens ?? 0, totalTokens: response.usage?.total_tokens ?? 0, cost: calculateOpenRouterCost(config.model, response.usage), latencyMs: Date.now() - started, cached: false, requestId: response._request_id ?? response.id, finishReason: response.choices[0]?.finish_reason ?? undefined };
     } catch (error) { throw classifyProviderError(error, Provider.OPENROUTER); }
   }
 
   async completeWithFallback(config: GeneralModelConfig, fallbacks: GeneralModel[], systemPrompt: string, userPrompt: string, signal?: AbortSignal): Promise<LLMResponse> {
-    const attempts = [config.model, ...fallbacks.filter(model => model !== config.model)];
+    const attempts = [...new Set([config.model, ...fallbacks])];
     const errors: ProviderRequestError[] = [];
     for (const model of attempts) {
+      throwIfAborted(signal, Provider.OPENROUTER);
       try { return await this.complete({ ...config, model }, systemPrompt, userPrompt, signal); }
-      catch (error) { errors.push(classifyProviderError(error, Provider.OPENROUTER)); }
+      catch (error) {
+        const classified = classifyProviderError(error, Provider.OPENROUTER);
+        errors.push(classified);
+        if (!classified.retryable || classified.kind === 'cancelled') throw classified;
+      }
     }
-    throw new ProviderRequestError(`All OpenRouter models failed: ${errors.map(error => `${error.kind}:${error.message}`).join(' | ')}`, { provider: Provider.OPENROUTER, kind: errors.some(error => error.retryable) ? 'server' : 'client', retryable: errors.some(error => error.retryable), cause: errors });
+    throw new ProviderRequestError('All OpenRouter fallback attempts failed', {
+      provider: Provider.OPENROUTER,
+      kind: errors.at(-1)?.kind ?? 'unknown',
+      retryable: errors.some(error => error.retryable),
+      code: 'ALL_FALLBACKS_FAILED',
+      cause: errors,
+    });
   }
 }
 
