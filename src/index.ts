@@ -1,384 +1,177 @@
-/**
- * @l9_meta
- * @module @quantum-l9/llm-router
- * @file src/index.ts
- * @purpose Main entry point — the unified LLM Router that all L9 bots consume
- * @pattern TaskDescriptor → Router → Provider Client → LLMResponse
- * @consumers l9-seo-bot, l9-website-factory, future bots
- */
-
-import {
-  TaskDescriptor,
-  TaskType,
-  LLMResponse,
-  Provider,
-  BudgetConfig,
-  GeneralModel,
-  SonarModel,
-  RouterConfig,
-  RoutingDecision,
-} from './types.js';
-import { resolvePerplexityConfig } from './matrices/perplexity-matrix.js';
+import { randomUUID } from 'node:crypto';
+import { BudgetReservationError, BudgetTracker } from './budget/index.js';
+import { CircuitBreaker, CircuitOpenError, type CircuitPermit } from './circuit-breaker.js';
 import { resolveGeneralConfig, getFallbackChain } from './matrices/general-matrix.js';
-import { BudgetTracker } from './budget/index.js';
-import { PerplexityClient } from './providers/perplexity.js';
-import { OpenRouterClient } from './providers/openrouter.js';
+import { isSearchTask, resolvePerplexityConfig } from './matrices/perplexity-matrix.js';
+import { classifyProviderError, isCircuitFailure } from './provider-errors.js';
+import { OpenRouterClient, validateImageUrl, type OpenRouterClientLike } from './providers/openrouter.js';
+import { PerplexityClient, type PerplexityClientLike } from './providers/perplexity.js';
+import { parseExecutableTaskDescriptor, parseRouterConfig, parseTaskDescriptor } from './schemas.js';
 import {
-  resolveVisionConfig,
-  generateFullSiteQAPlan,
-  VIEWPORTS,
-  type FullSiteQAConfig,
-  type VisualQATask,
-} from './vision/index.js';
+  GeneralModel,
+  Provider,
+  SonarModel,
+  TaskType,
+  type BudgetConfig,
+  type LLMResponse,
+  type RouterConfig,
+  type RoutingDecision,
+  type RoutingResolution,
+  type TaskDescriptor,
+} from './types.js';
+import { generateFullSiteQAPlan, resolveVisionConfig, VIEWPORTS, type FullSiteQAConfig, type VisualQATask } from './vision/index.js';
 
-// ═══════════════════════════════════════════════════════════════
-// SEARCH TASK TYPES (routed to Perplexity)
-// ═══════════════════════════════════════════════════════════════
+const VISION_TASKS = new Set<TaskType>([TaskType.VISUAL_QA, TaskType.SCREENSHOT_ANALYSIS, TaskType.LAYOUT_VALIDATION]);
 
-const SEARCH_TASK_TYPES: Set<TaskType> = new Set([
-  TaskType.COMPETITOR_RESEARCH,
-  TaskType.CITATION_CHECK,
-  TaskType.FACT_VERIFICATION,
-  TaskType.MARKET_RESEARCH,
-  TaskType.LINK_PROSPECTING,
-]);
+export interface RouterDependencies {
+  clock?: () => Date;
+  idFactory?: () => string;
+  openrouterClient?: OpenRouterClientLike;
+  perplexityClient?: PerplexityClientLike;
+}
 
-// ═══════════════════════════════════════════════════════════════
-// VISION TASK TYPES (routed to vision models)
-// ═══════════════════════════════════════════════════════════════
+export function resolveRoute(task: TaskDescriptor): RoutingResolution {
+  if (isSearchTask(task.type)) {
+    const config = resolvePerplexityConfig(task);
+    return { taskType: task.type, complexity: task.complexity, provider: Provider.PERPLEXITY, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason };
+  }
+  if (VISION_TASKS.has(task.type)) {
+    const config = resolveVisionConfig(task.type as TaskType.VISUAL_QA | TaskType.SCREENSHOT_ANALYSIS | TaskType.LAYOUT_VALIDATION, task.complexity, task.images?.length ?? 1);
+    return { taskType: task.type, complexity: task.complexity, provider: Provider.OPENROUTER, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason };
+  }
+  const config = resolveGeneralConfig(task);
+  return { taskType: task.type, complexity: task.complexity, provider: Provider.OPENROUTER, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason };
+}
 
-const VISION_TASK_TYPES: Set<TaskType> = new Set([
-  TaskType.VISUAL_QA,
-  TaskType.SCREENSHOT_ANALYSIS,
-  TaskType.LAYOUT_VALIDATION,
-]);
-
-// ═══════════════════════════════════════════════════════════════
-// THE ROUTER
-// ═══════════════════════════════════════════════════════════════
+export function getDowngradedModel(
+  original: GeneralModel | SonarModel,
+  provider: Provider,
+  maxTier: 'fast' | 'strategic' | 'critical',
+): GeneralModel | SonarModel {
+  if (maxTier === 'critical') return original;
+  if (provider === Provider.PERPLEXITY) return maxTier === 'fast' ? SonarModel.SONAR : original === SonarModel.SONAR_DEEP_RESEARCH ? SonarModel.SONAR_REASONING_PRO : original;
+  if (maxTier === 'fast') return GeneralModel.GPT4O_MINI;
+  return [GeneralModel.CLAUDE_OPUS, GeneralModel.O1, GeneralModel.O3].includes(original as GeneralModel) ? GeneralModel.CLAUDE_SONNET : original;
+}
 
 export class L9LLMRouter {
-  private budget: BudgetTracker;
-  private perplexity: PerplexityClient;
-  private openrouter: OpenRouterClient;
-  private callLog: RoutingDecision[] = [];
+  private readonly budget: BudgetTracker;
+  private readonly circuitBreaker: CircuitBreaker;
+  private readonly perplexity: PerplexityClientLike;
+  private readonly openrouter: OpenRouterClientLike;
+  private readonly clock: () => Date;
+  private readonly idFactory: () => string;
+  private readonly callLog: RoutingDecision[] = [];
 
-  constructor(config: RouterConfig) {
-    this.budget = new BudgetTracker(config.budget);
-    this.perplexity = new PerplexityClient(config.perplexityApiKey);
-    this.openrouter = new OpenRouterClient(config.openrouterApiKey, config.appName);
+  constructor(config: RouterConfig, dependencies: RouterDependencies = {}) {
+    const validated = parseRouterConfig(config);
+    this.budget = new BudgetTracker(validated.budget);
+    this.circuitBreaker = new CircuitBreaker(validated.circuitBreaker);
+    this.clock = dependencies.clock ?? (() => new Date());
+    this.idFactory = dependencies.idFactory ?? randomUUID;
+    this.perplexity = dependencies.perplexityClient ?? new PerplexityClient(validated.perplexityApiKey, validated.providerTimeoutMs);
+    this.openrouter = dependencies.openrouterClient ?? new OpenRouterClient(validated.openrouterApiKey, validated.appName, validated.providerTimeoutMs);
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // MAIN ENTRY POINT
-  // ─────────────────────────────────────────────────────────────
+  route(input: TaskDescriptor): RoutingDecision {
+    const task = parseTaskDescriptor(input);
+    const resolution = resolveRoute(task);
+    return { ...resolution, taskId: this.idFactory(), clientId: task.clientId ?? 'default', timestamp: this.clock().toISOString() };
+  }
 
-  /**
-   * Route a task to the optimal model and execute it.
-   * This is the ONLY method consuming bots need to call.
-   * 
-   * @example
-   * const response = await router.execute({
-   *   clientId: 'safehavenrr',
-   *   type: TaskType.CONTENT_GENERATION,
-   *   complexity: TaskComplexity.MEDIUM,
-   *   description: 'Write a blog post about roof repair costs',
-   * }, systemPrompt, userPrompt);
-   */
   async execute(
-    task: TaskDescriptor,
+    input: TaskDescriptor,
     systemPrompt: string,
     userPrompt: string,
-    options?: {
-      images?: string[];
-      assistantContext?: string;
-      consensus?: boolean;
-    },
+    options?: { images?: string[]; assistantContext?: string; consensus?: boolean; signal?: AbortSignal },
   ): Promise<LLMResponse> {
+    const parsedTask = parseExecutableTaskDescriptor(input);
+    const task = options?.images === undefined
+      ? parsedTask
+      : parseExecutableTaskDescriptor({ ...parsedTask, images: options.images });
+    const images = task.images;
+    if (images) for (const image of images) validateImageUrl(image);
     const decision = this.route(task);
 
-    // Budget tracking is per-client, so a clientId is required.
-    const clientId = task.clientId;
-    if (!clientId) {
-      throw new Error('TaskDescriptor.clientId is required for budget tracking');
-    }
-
-    // Check budget
-    const throttle = this.budget.evaluateTask(
-      clientId,
-      task,
-      decision.estimatedCost,
-    );
-
-    if (!throttle.allowTask) {
-      throw new BudgetExhaustedError(
-        `Task deferred: ${throttle.reason}`,
-        task,
-        decision,
-      );
-    }
-
-    // Apply model downgrade if throttled (Fix #5: propagate downgrade to execution)
-    if (throttle.forceDowngrade) {
-      decision.downgraded = true;
-      decision.downgradedFrom = decision.model;
-      decision.model = this.getDowngradedModel(decision.model, throttle.maxModelTier);
-    }
-
-    // Execute based on provider
-    let response: LLMResponse;
-    let billedCost: number;
-
-    if (decision.provider === Provider.PERPLEXITY) {
-      // Fix #5: Use decision.model (which may have been downgraded) for config override
-      const config = resolvePerplexityConfig(task);
-      if (decision.downgraded) {
-        config.model = decision.model as any; // Apply downgraded model
+    let reservationId: string | undefined;
+    let permit: CircuitPermit | undefined;
+    try {
+      const { decision: throttle, reservation } = this.budget.reserveTask(task.clientId, task, decision.estimatedCost, this.clock(), this.idFactory);
+      reservationId = reservation.id;
+      if (throttle.forceDowngrade) {
+        decision.downgraded = true;
+        decision.downgradedFrom = decision.model;
+        decision.model = getDowngradedModel(decision.model, decision.provider, throttle.maxModelTier);
       }
 
-      if (options?.consensus && config.variations > 1) {
-        const result = await this.perplexity.completeWithConsensus(
-          config,
-          systemPrompt,
-          userPrompt,
-          options.assistantContext,
-        );
-        response = result.best;
-        // Fix #6: Track total billed cost across all consensus calls, not just best
-        billedCost = result.all.reduce((sum, r) => sum + r.cost, 0);
+      permit = this.circuitBreaker.acquire(decision.provider, this.clock());
+      let response: LLMResponse;
+      if (decision.provider === Provider.PERPLEXITY) {
+        const config = resolvePerplexityConfig(task);
+        if (!Object.values(SonarModel).includes(decision.model as SonarModel)) throw new Error('Perplexity route resolved a non-Sonar model');
+        config.model = decision.model as SonarModel;
+        response = options?.consensus && config.variations > 1
+          ? (await this.perplexity.completeWithConsensus(config, systemPrompt, userPrompt, options.assistantContext, options.signal)).best
+          : await this.perplexity.complete(config, systemPrompt, userPrompt, options?.assistantContext, options?.signal);
+      } else if (VISION_TASKS.has(task.type) && images?.length) {
+        const config = resolveVisionConfig(task.type as TaskType.VISUAL_QA | TaskType.SCREENSHOT_ANALYSIS | TaskType.LAYOUT_VALIDATION, task.complexity, images.length);
+        config.model = decision.model as GeneralModel;
+        response = await this.openrouter.completeWithVision(config, systemPrompt, userPrompt, images, options?.signal);
       } else {
-        response = await this.perplexity.complete(
-          config,
-          systemPrompt,
-          userPrompt,
-          options?.assistantContext,
-        );
-        billedCost = response.cost;
+        const config = resolveGeneralConfig(task);
+        config.model = decision.model as GeneralModel;
+        response = await this.openrouter.completeWithFallback(config, getFallbackChain(config.model), systemPrompt, userPrompt, options?.signal);
       }
-    } else if (VISION_TASK_TYPES.has(task.type) && options?.images?.length) {
-      const visionConfig = resolveVisionConfig(
-        task.type as TaskType.VISUAL_QA | TaskType.SCREENSHOT_ANALYSIS | TaskType.LAYOUT_VALIDATION,
-        task.complexity,
-        options.images.length,
-      );
-      // Fix #5: Apply downgraded model to vision config
-      if (decision.downgraded) {
-        visionConfig.model = decision.model as any;
+
+      this.circuitBreaker.recordSuccess(permit);
+      this.budget.reconcile(reservationId, response.cost);
+      reservationId = undefined;
+      decision.actualCost = response.cost;
+      decision.latencyMs = response.latencyMs;
+      this.callLog.push(decision);
+      return response;
+    } catch (error) {
+      if (reservationId) this.budget.release(reservationId);
+      if (permit) {
+        if (isCircuitFailure(error, decision.provider)) this.circuitBreaker.recordFailure(permit, this.clock());
+        else this.circuitBreaker.release(permit, this.clock());
       }
-      response = await this.openrouter.completeWithVision(
-        visionConfig,
-        systemPrompt,
-        userPrompt,
-        options.images,
-      );
-      billedCost = response.cost;
-    } else {
-      const config = resolveGeneralConfig(task);
-      // Fix #5: Apply downgraded model to general config
-      if (decision.downgraded) {
-        config.model = decision.model as any;
-      }
-      const fallbacks = getFallbackChain(config.model);
-      response = await this.openrouter.completeWithFallback(
-        config,
-        fallbacks,
-        systemPrompt,
-        userPrompt,
-      );
-      billedCost = response.cost;
+      if (error instanceof BudgetReservationError) throw new BudgetExhaustedError(error.message, task, decision, error);
+      if (error instanceof CircuitOpenError) throw error;
+      if (error instanceof Error && ['TaskValidationError', 'UnsafeImageUrlError'].includes(error.name)) throw error;
+      throw classifyProviderError(error, decision.provider);
     }
-
-    // Record spend (Fix #6: use billedCost which includes all consensus calls)
-    this.budget.recordSpend(clientId, billedCost);
-
-    // Log the routing decision
-    decision.actualCost = billedCost;
-    decision.latencyMs = response.latencyMs;
-    this.callLog.push(decision);
-
-    return response;
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // ROUTING LOGIC (deterministic, no LLM call)
-  // ─────────────────────────────────────────────────────────────
-
-  /**
-   * Determine routing without executing.
-   * Useful for cost estimation and planning.
-   */
-  route(task: TaskDescriptor): RoutingDecision {
-    // Search tasks → Perplexity
-    if (SEARCH_TASK_TYPES.has(task.type)) {
-      const config = resolvePerplexityConfig(task);
-      return {
-        taskId: crypto.randomUUID(),
-        clientId: task.clientId ?? 'default',
-        taskType: task.type,
-        complexity: task.complexity,
-        provider: Provider.PERPLEXITY,
-        model: config.model,
-        estimatedCost: config.estimatedCostPerCall,
-        reason: config.resolutionReason,
-        timestamp: new Date().toISOString(),
-      };
-    }
-
-    // Vision tasks → OpenRouter with vision model
-    if (VISION_TASK_TYPES.has(task.type)) {
-      const config = resolveVisionConfig(
-        task.type as TaskType.VISUAL_QA | TaskType.SCREENSHOT_ANALYSIS | TaskType.LAYOUT_VALIDATION,
-        task.complexity,
-      );
-      return {
-        taskId: crypto.randomUUID(),
-        clientId: task.clientId ?? 'default',
-        taskType: task.type,
-        complexity: task.complexity,
-        provider: Provider.OPENROUTER,
-        model: config.model,
-        estimatedCost: config.estimatedCostPerCall,
-        reason: config.resolutionReason,
-        timestamp: new Date().toISOString(),
-      };
-    }
-
-    // Everything else → OpenRouter general matrix
-    const config = resolveGeneralConfig(task);
-    return {
-      taskId: crypto.randomUUID(),
-      clientId: task.clientId ?? 'default',
-      taskType: task.type,
-      complexity: task.complexity,
-      provider: Provider.OPENROUTER,
-      model: config.model,
-      estimatedCost: config.estimatedCostPerCall,
-      reason: config.resolutionReason,
-      timestamp: new Date().toISOString(),
-    };
-  }
-
-  // ─────────────────────────────────────────────────────────────
-  // CLIENT MANAGEMENT
-  // ─────────────────────────────────────────────────────────────
-
-  initClient(clientId: string, budgetOverrides?: Partial<BudgetConfig>): void {
-    this.budget.initClient(clientId, budgetOverrides);
-  }
-
-  resetDaily(clientId: string): void {
-    this.budget.resetDaily(clientId);
-  }
-
-  resetWeekly(clientId: string): void {
-    this.budget.resetWeekly(clientId);
-  }
-
-  resetMonthly(clientId: string): void {
-    this.budget.resetMonthly(clientId);
-  }
-
-  // ─────────────────────────────────────────────────────────────
-  // REPORTING
-  // ─────────────────────────────────────────────────────────────
-
-  getClientBudgetReport(clientId: string) {
-    return this.budget.getClientBudgetReport(clientId);
-  }
-
-  getAllBudgetReports() {
-    return this.budget.getAllBudgetReports();
-  }
-
-  getGlobalSpend() {
-    return this.budget.getGlobalSpend();
-  }
-
-  getCallLog(limit: number = 100): RoutingDecision[] {
-    return this.callLog.slice(-limit);
-  }
-
-  getCallLogByClient(clientId: string, limit: number = 50): RoutingDecision[] {
-    return this.callLog
-      .filter(d => d.clientId === clientId)
-      .slice(-limit);
-  }
-
-  // ─────────────────────────────────────────────────────────────
-  // VISION QA HELPERS (convenience methods for consuming bots)
-  // ─────────────────────────────────────────────────────────────
-
-  /**
-   * Generate a full-site visual QA plan.
-   * The consuming bot takes the screenshots and calls execute() for each task.
-   */
-  planVisualQA(config: FullSiteQAConfig): VisualQATask[] {
-    return generateFullSiteQAPlan(config);
-  }
-
-  getViewports() {
-    return VIEWPORTS;
-  }
-
-  // ─────────────────────────────────────────────────────────────
-  // INTERNAL HELPERS
-  // ─────────────────────────────────────────────────────────────
-
-  private getDowngradedModel(
-    original: GeneralModel | SonarModel | string,
-    maxTier: 'fast' | 'strategic' | 'critical',
-  ): GeneralModel | SonarModel | string {
-    if (maxTier === 'fast') {
-      return GeneralModel.GPT4O_MINI;
-    }
-    if (maxTier === 'strategic') {
-      // If original was critical tier, downgrade to strategic
-      if (
-        original === GeneralModel.CLAUDE_OPUS ||
-        original === GeneralModel.O1 ||
-        original === GeneralModel.O3
-      ) {
-        return GeneralModel.CLAUDE_SONNET;
-      }
-    }
-    return original; // No downgrade needed
-  }
+  initClient(clientId: string, overrides?: Partial<BudgetConfig>): void { this.budget.initClient(clientId, overrides); }
+  resetDaily(clientId: string): void { this.budget.resetDaily(clientId); }
+  resetWeekly(clientId: string): void { this.budget.resetWeekly(clientId); }
+  resetMonthly(clientId: string): void { this.budget.resetMonthly(clientId); }
+  resetGlobalMonthly(): void { this.budget.resetGlobalMonthly(); }
+  checkSurge(clientId: string, dayOfWeek: number = this.clock().getDay()): boolean { return this.budget.checkSurgeAllowance(clientId, dayOfWeek); }
+  getClientBudgetReport(clientId: string) { return this.budget.getClientBudgetReport(clientId); }
+  getAllBudgetReports() { return this.budget.getAllBudgetReports(); }
+  getGlobalSpend() { return this.budget.getGlobalSpend(); }
+  getCircuitState(provider: Provider) { return this.circuitBreaker.getState(provider); }
+  getCallLog(limit = 100): RoutingDecision[] { return this.callLog.slice(-limit).map(entry => ({ ...entry })); }
+  getCallLogByClient(clientId: string, limit = 50): RoutingDecision[] { return this.callLog.filter(entry => entry.clientId === clientId).slice(-limit).map(entry => ({ ...entry })); }
+  planVisualQA(config: FullSiteQAConfig): VisualQATask[] { return generateFullSiteQAPlan(config); }
+  getViewports() { return VIEWPORTS; }
 }
-
-// ═══════════════════════════════════════════════════════════════
-// ERROR TYPES
-// ═══════════════════════════════════════════════════════════════
 
 export class BudgetExhaustedError extends Error {
-  constructor(
-    message: string,
-    public task: TaskDescriptor,
-    public decision: RoutingDecision,
-  ) {
-    super(message);
+  public override readonly cause: BudgetReservationError;
+  constructor(message: string, public readonly task: TaskDescriptor, public readonly decision: RoutingDecision, cause: BudgetReservationError) {
+    super(message, { cause });
     this.name = 'BudgetExhaustedError';
+    this.cause = cause;
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// RE-EXPORTS (consuming bots import everything from here)
-// ═══════════════════════════════════════════════════════════════
-
-export {
-  TaskType,
-  TaskComplexity,
-  TaskDescriptor,
-  LLMResponse,
-  Provider,
-  GeneralModel,
-  SonarModel,
-  BudgetConfig,
-  RouterConfig,
-  RoutingDecision,
-} from './types.js';
-
-export { BudgetTracker, ThrottleLevel } from './budget/index.js';
-export { resolvePerplexityConfig } from './matrices/perplexity-matrix.js';
-export { resolveGeneralConfig, getFallbackChain } from './matrices/general-matrix.js';
-export { resolveVisionConfig, VIEWPORTS, VISUAL_QA_PROMPTS } from './vision/index.js';
-export type { FullSiteQAConfig, VisualQATask, ViewportConfig } from './vision/index.js';
+export * from './types.js';
+export { BudgetTracker, BudgetReservationError, ThrottleLevel } from './budget/index.js';
+export { CircuitBreaker, CircuitOpenError } from './circuit-breaker.js';
+export { ProviderRequestError } from './provider-errors.js';
+export { TaskValidationError, RouterConfigValidationError } from './schemas.js';
+export { UnsafeImageUrlError } from './providers/openrouter.js';
+export { VIEWPORTS } from './vision/index.js';
