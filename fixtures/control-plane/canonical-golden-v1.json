@@ -1,0 +1,10 @@
+{
+  "input": {
+    "z": 1,
+    "a": "é",
+    "nested": {"beta": true, "alpha": null},
+    "array": [3, 2, 1]
+  },
+  "canonical": "{\"a\":\"é\",\"array\":[3,2,1],\"nested\":{\"alpha\":null,\"beta\":true},\"z\":1}",
+  "sha256": "ad73f9077cce273c06520be01118fe9c2124a22eb54ab046eb469d00d6425c83"
+}

@@ -69,7 +69,8 @@
   "files": [
     "dist",
     "README.md",
-    "ARCHITECTURE.md"
+    "ARCHITECTURE.md",
+    "RUNBOOK.md"
   ],
   "packageManager": "npm@10.9.2"
 }
