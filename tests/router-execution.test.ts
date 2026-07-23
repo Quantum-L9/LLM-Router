@@ -11,7 +11,12 @@ const fakeOpenRouter = {
 };
 const fakePerplexity = {
   complete: async (_config: PerplexityConfig) => ({ ...response, provider: Provider.PERPLEXITY }),
-  completeWithConsensus: async (_config: PerplexityConfig) => ({ best: { ...response, provider: Provider.PERPLEXITY }, all: [{ ...response, provider: Provider.PERPLEXITY }], consensusScore: 1 }),
+  completeWithConsensus: async (_config: PerplexityConfig) => ({
+    best: { ...response, provider: Provider.PERPLEXITY },
+    all: [{ ...response, provider: Provider.PERPLEXITY }],
+    consensusScore: 1,
+    aggregate: { inputTokens: 1, outputTokens: 1, totalTokens: 2, cost: 0.1, latencyMs: 5, citations: [] },
+  }),
 };
 
 describe('router execution', () => {
@@ -67,6 +72,23 @@ describe('router execution', () => {
     );
     expect(selectedModel).toBe(GeneralModel.CLAUDE_SONNET_VISION);
     expect(router.getCallLog()[0]).toMatchObject({ model: GeneralModel.CLAUDE_SONNET_VISION, estimatedCost: 0.03 });
+  });
+
+  it('reconciles the aggregate cost of consensus execution', async () => {
+    const consensusPerplexity = {
+      ...fakePerplexity,
+      completeWithConsensus: async (_config: PerplexityConfig) => ({
+        best: { ...response, provider: Provider.PERPLEXITY, cost: 0.1 },
+        all: [],
+        consensusScore: 1,
+        aggregate: { inputTokens: 30, outputTokens: 15, totalTokens: 45, cost: 0.6, latencyMs: 20, citations: ['https://example.com'] },
+      }),
+    };
+    const router = new L9LLMRouter({ perplexityApiKey: 'p', openrouterApiKey: 'o' }, { openrouterClient: fakeOpenRouter, perplexityClient: consensusPerplexity });
+    router.initClient('a');
+    const result = await router.execute({ clientId: 'a', type: TaskType.MARKET_RESEARCH, complexity: TaskComplexity.HIGH }, 's', 'u', { consensus: true });
+    expect(result).toMatchObject({ cost: 0.6, inputTokens: 30, outputTokens: 15, totalTokens: 45 });
+    expect(router.getClientBudgetReport('a').monthSpend).toBe(0.6);
   });
 
   it('activates the public budget-exhausted error contract', async () => {
