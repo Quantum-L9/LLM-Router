@@ -42,6 +42,10 @@ const CircuitBreakerConfigPartialSchema = z.object({
 export const RouterConfigSchema = z.object({
   perplexityApiKey: z.string().min(1, 'perplexityApiKey is required'),
   openrouterApiKey: z.string().min(1, 'openrouterApiKey is required'),
+  openrouterBaseUrl: z.string().url('openrouterBaseUrl must be an absolute URL').refine(
+    value => value.startsWith('https://') || value.startsWith('http://'),
+    { message: 'openrouterBaseUrl must use http(s)' },
+  ).optional(),
   appName: z.string().min(1).optional(),
   budget: BudgetConfigPartialSchema.optional(),
   circuitBreaker: CircuitBreakerConfigPartialSchema.optional(),
