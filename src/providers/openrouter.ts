@@ -88,10 +88,47 @@ export interface OpenRouterClientLike {
   completeWithFallback(config: GeneralModelConfig, fallbacks: GeneralModel[], systemPrompt: string, userPrompt: string, signal?: AbortSignal): Promise<LLMResponse>;
 }
 
+export const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+
+export class InvalidBaseUrlError extends Error {
+  constructor(message: string, public readonly url: string, public readonly source: 'config' | 'env') {
+    super(message);
+    this.name = 'InvalidBaseUrlError';
+  }
+  toJSON(): Record<string, unknown> { return { name: this.name, message: this.message, source: this.source }; }
+}
+
+/**
+ * Resolves the OpenAI-compatible endpoint for the OpenRouter provider.
+ *
+ * Precedence: explicit config value > `OPENROUTER_BASE_URL` env var > the
+ * OpenRouter cloud default. Both overrides are validated as absolute http(s)
+ * URLs and normalized to strip a trailing slash so path joining stays
+ * predictable. The default is returned untouched, keeping existing
+ * deployments byte-for-byte identical in behavior.
+ */
+export function resolveOpenRouterBaseUrl(configured?: string, env: NodeJS.ProcessEnv = process.env): string {
+  const candidate = configured !== undefined
+    ? { value: configured, source: 'config' as const }
+    : env.OPENROUTER_BASE_URL !== undefined && env.OPENROUTER_BASE_URL.trim() !== ''
+      ? { value: env.OPENROUTER_BASE_URL, source: 'env' as const }
+      : undefined;
+  if (candidate === undefined) return DEFAULT_OPENROUTER_BASE_URL;
+  const trimmed = candidate.value.trim();
+  let parsed: URL;
+  try { parsed = new URL(trimmed); } catch {
+    throw new InvalidBaseUrlError(`OpenRouter base URL from ${candidate.source} must be an absolute URL`, trimmed, candidate.source);
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new InvalidBaseUrlError(`OpenRouter base URL from ${candidate.source} must use http(s), got ${parsed.protocol}`, trimmed, candidate.source);
+  }
+  return trimmed.replace(/\/+$/, '');
+}
+
 export class OpenRouterClient implements OpenRouterClientLike {
   private readonly transport: ChatTransport;
-  constructor(apiKey: string, appName = 'L9-LLM-Router', timeoutMs = 60_000, transport?: ChatTransport) {
-    this.transport = transport ?? new OpenAIChatTransport({ apiKey, baseURL: 'https://openrouter.ai/api/v1', timeoutMs, maxRetries: 0, defaultHeaders: { 'HTTP-Referer': 'https://l9.systems', 'X-Title': appName } });
+  constructor(apiKey: string, appName = 'L9-LLM-Router', timeoutMs = 60_000, transport?: ChatTransport, baseUrl?: string) {
+    this.transport = transport ?? new OpenAIChatTransport({ apiKey, baseURL: resolveOpenRouterBaseUrl(baseUrl), timeoutMs, maxRetries: 0, defaultHeaders: { 'HTTP-Referer': 'https://l9.systems', 'X-Title': appName } });
   }
 
   async complete(config: GeneralModelConfig, systemPrompt: string, userPrompt: string, signal?: AbortSignal): Promise<LLMResponse> {

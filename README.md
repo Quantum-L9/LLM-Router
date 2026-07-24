@@ -64,6 +64,24 @@ const result = await router.execute(
 
 `execute()` requires a non-empty `clientId`. The router rejects malformed execution input before allocating a request ID, reserving budget, or dispatching a provider call.
 
+## Custom OpenRouter endpoint
+
+The OpenRouter provider targets `https://openrouter.ai/api/v1` by default. Any OpenAI-compatible endpoint (corporate gateway, proxy, or self-hosted backend) can be substituted without code changes:
+
+```ts
+// Option 1 — explicit config (highest precedence)
+const router = new L9LLMRouter({
+  perplexityApiKey: process.env.PERPLEXITY_API_KEY!,
+  openrouterApiKey: process.env.OPENROUTER_API_KEY!,
+  openrouterBaseUrl: 'https://llm-gateway.internal.example/v1',
+});
+
+// Option 2 — environment variable (used when config omits openrouterBaseUrl)
+// OPENROUTER_BASE_URL=https://llm-gateway.internal.example/v1
+```
+
+Resolution precedence is explicit config, then `OPENROUTER_BASE_URL`, then the OpenRouter cloud default. Overrides are validated as absolute http(s) URLs at construction time and trailing slashes are normalized. Invalid values throw `InvalidBaseUrlError` (or `RouterConfigValidationError` at config parse time). Deployments that set neither are unaffected.
+
 ## Vision execution
 
 Images supplied through execution options are merged into the validated task before routing. This ensures model selection and budget estimation use the same image count that reaches the provider.

@@ -167,6 +167,14 @@ export interface LLMResponse {
 export interface RouterConfig {
   perplexityApiKey: string;
   openrouterApiKey: string;
+  /**
+   * OpenAI-compatible endpoint for the OpenRouter provider. Defaults to
+   * `https://openrouter.ai/api/v1`; may also be supplied via the
+   * `OPENROUTER_BASE_URL` environment variable (explicit config wins over env).
+   * Enables gateways, proxies, and self-hosted OpenAI-compatible backends
+   * without code changes. Existing deployments are unaffected.
+   */
+  openrouterBaseUrl?: string;
   appName?: string;
   budget?: Partial<BudgetConfig>;
   circuitBreaker?: Partial<CircuitBreakerConfig>;
