@@ -1,0 +1,179 @@
+# Canonical L9 merge gate for @quantum-l9/llm-router.
+#
+# CI is a router, not a bouncer: classify the PR from its changed files, run
+# only the relevant Node/TS gates, and summarize merge truth in ONE required
+# check — "PR Pipeline Gate". This is the intended branch-protection required
+# check; enforcement is configured in GitHub Settings (see docs/ci/convergence.md).
+#
+# Adapted from the L9 shared model (Python) to this TypeScript package: gates map
+# to the repo's own npm scripts (eslint, tsc, vitest, npm audit, boundary probe).
+# Actions are SHA-pinned (Scorecard hardening) with a version comment.
+name: PR Pipeline Gate
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-pipeline-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20.19.0"
+
+jobs:
+  classify:
+    name: Classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      pr_class: ${{ steps.classify.outputs.pr_class }}
+      run_lint: ${{ steps.classify.outputs.run_lint }}
+      run_build: ${{ steps.classify.outputs.run_build }}
+      run_test: ${{ steps.classify.outputs.run_test }}
+      run_security: ${{ steps.classify.outputs.run_security }}
+      is_docs_only: ${{ steps.classify.outputs.is_docs_only }}
+      diff_unknown: ${{ steps.classify.outputs.diff_unknown }}
+      requires_human_review: ${{ steps.classify.outputs.requires_human_review }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - id: classify
+        name: Classify PR
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: python3 .github/scripts/classify_pr.py
+
+  lint:
+    name: Lint
+    needs: classify
+    if: needs.classify.outputs.run_lint == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run lint:boundary
+
+  build:
+    name: Build & Types
+    needs: classify
+    if: needs.classify.outputs.run_build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: npm run verify:types
+      - run: npm run verify:declarations
+
+  test:
+    name: Test
+    needs: classify
+    if: needs.classify.outputs.run_test == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm test
+
+  security:
+    name: Security
+    needs: classify
+    if: needs.classify.outputs.run_security == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=high --omit=dev
+      - run: npm run verify:package
+
+  gate:
+    name: PR Pipeline Gate
+    needs: [classify, lint, build, test, security]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Evaluate canonical merge gate
+        env:
+          PR_CLASS: ${{ needs.classify.outputs.pr_class }}
+          DIFF_UNKNOWN: ${{ needs.classify.outputs.diff_unknown }}
+          HUMAN_REVIEW: ${{ needs.classify.outputs.requires_human_review }}
+          R_CLASSIFY: ${{ needs.classify.result }}
+          R_LINT: ${{ needs.lint.result }}
+          R_BUILD: ${{ needs.build.result }}
+          R_TEST: ${{ needs.test.result }}
+          R_SECURITY: ${{ needs.security.result }}
+        run: |
+          set -euo pipefail
+          fail=0
+          summary=".github pr-pipeline gate summary"
+          note() { echo "$1"; summary="${summary}
+          - $1"; }
+
+          note "pr_class: ${PR_CLASS:-unknown}"
+          note "classify: ${R_CLASSIFY}"
+
+          # Classifier itself must succeed (fail closed).
+          if [ "${R_CLASSIFY}" != "success" ]; then
+            note "BLOCK: classifier did not succeed"; fail=1
+          fi
+          if [ "${DIFF_UNKNOWN}" = "true" ]; then
+            note "NOTE: diff_unknown -> conservative core gates ran (fail closed)"
+          fi
+
+          # A routed gate blocks only when it actually ran and failed.
+          # 'skipped' is a legitimate route decision, never a failure.
+          for pair in "lint:${R_LINT}" "build:${R_BUILD}" "test:${R_TEST}" "security:${R_SECURITY}"; do
+            name="${pair%%:*}"; result="${pair##*:}"
+            if [ "${result}" = "failure" ]; then
+              note "BLOCK: ${name} failed"; fail=1
+            elif [ "${result}" = "cancelled" ]; then
+              note "BLOCK: ${name} cancelled"; fail=1
+            else
+              note "ok: ${name} = ${result}"
+            fi
+          done
+
+          if [ "${HUMAN_REVIEW}" = "true" ]; then
+            note "ADVISORY: touched security/compliance/unknown surface — human review recommended"
+          fi
+
+          {
+            echo "## PR Pipeline Gate"
+            echo ""
+            echo "\`\`\`"
+            echo "${summary}"
+            echo "\`\`\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          if [ "${fail}" -ne 0 ]; then
+            echo "Gate FAILED"; exit 1
+          fi
+          echo "Gate PASSED"

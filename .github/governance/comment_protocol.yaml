@@ -1,0 +1,19 @@
+# L9 PR comment protocol. Persistent governance comments MUST use a stable
+# marker and update in place — never duplicate. Prepares the agent-review loop
+# (not enabled yet). See the l9-github-ci kernel for the canonical layout.
+comment_protocol:
+  version: 1
+  bot_identity: "github-actions[bot]"
+  update_existing_comment: true
+  duplicate_persistent_comments_allowed: false
+  max_comment_chars: 65336
+  markers:
+    ci_summary: "<!-- l9-ci-summary-marker: v1 -->"
+    audit: "<!-- l9-audit-marker: v1 -->"
+    contract_control: "<!-- l9-contract-control-marker: v1 -->"
+    security: "<!-- l9-security-marker: v1 -->"
+    future_agent_review: "<!-- l9-agent-review-marker: v1 -->"
+  rules:
+    - "Find existing comment by exact marker; update it in place."
+    - "Never match by title alone; never create duplicate persistent comments."
+    - "Truncate to the max length with an explicit truncation notice."

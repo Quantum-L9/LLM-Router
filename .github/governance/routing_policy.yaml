@@ -1,0 +1,48 @@
+# L9 CI routing policy for @quantum-l9/llm-router (TypeScript / Node).
+# Consumed by .github/scripts/classify_pr.py and .github/workflows/pr-pipeline.yml.
+# Primary signal is changed files; labels are secondary hints that may upgrade
+# relevance but never downgrade a touched security surface.
+routing_policy:
+  version: 1
+  primary_signal: changed_files
+  secondary_signal: labels
+  conflict_resolution: evidence_beats_labels
+  unknown_diff_behavior: fail_closed
+  classes:
+    - name: docs_only
+      patterns: ["*.md", "docs/**", "LICENSE", ".github/ISSUE_TEMPLATE/**"]
+      gates: []
+      advisory: [lint]
+    - name: ci_workflow
+      patterns: [".github/workflows/**"]
+      gates: [lint]
+      advisory: [security]
+    - name: tests_only
+      patterns: ["tests/**", "**/*.test.ts", "**/*.spec.ts"]
+      gates: [lint, test]
+    - name: dependency
+      patterns: ["package.json", "package-lock.json", ".npmrc"]
+      gates: [lint, build, test, security]
+    - name: compliance
+      patterns:
+        - "src/control-plane/**"
+        - "src/matrices/**"
+        - "fixtures/control-plane/**"
+        - ".github/governance/**"
+      gates: [lint, build, test]
+    - name: security
+      patterns:
+        - "src/providers/**"
+        - "src/vision/**"
+        - "src/budget/**"
+        - "eslint.config.js"
+        - "scripts/verify-eslint-boundary.mjs"
+      gates: [lint, build, test, security]
+      requires_human_review: true
+    - name: app_code
+      patterns: ["src/**", "scripts/**"]
+      gates: [lint, build, test, security]
+    - name: unknown
+      patterns: ["*"]
+      gates: [lint, build, test, security]
+      policy: fail_closed
