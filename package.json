@@ -1,8 +1,8 @@
 {
   "name": "@quantum-l9/llm-router",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "type": "module",
-  "description": "Reusable multi-provider LLM routing module with task-to-model matrix, Perplexity search depth optimization, vision QA, and budget enforcement. Shared across all L9 bots.",
+  "description": "Reusable multi-provider LLM routing module with governed l9-graphiti-memory hydration, task-to-model routing, budgets, search, vision, and provider resilience.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -26,7 +26,8 @@
     "anthropic",
     "openai",
     "multi-provider",
-    "budget"
+    "budget",
+    "persistence"
   ],
   "author": "L9 Systems",
   "license": "PROPRIETARY",
@@ -35,7 +36,8 @@
   },
   "dependencies": {
     "openai": "^6.48.0",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@quantum-l9/graphiti-memory-client": "^2.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
