@@ -1,4 +1,4 @@
-import { GraphitiMemoryClient, renderHydration, type MemoryClass } from '@quantum-l9/graphiti-memory-client';
+import { renderHydration, type GraphitiMemoryClient, type MemoryClass } from '@quantum-l9/graphiti-memory-client';
 
 export interface RouterMemoryConfig {
   client: GraphitiMemoryClient;

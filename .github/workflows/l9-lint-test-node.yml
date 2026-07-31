@@ -29,6 +29,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: l9-lint-test-node-${{ github.workflow }}-${{ github.ref }}
@@ -44,6 +45,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      packages: read
     steps:
       - name: Checkout immutable event revision
         env:
@@ -64,6 +66,8 @@ jobs:
       #   with:
       #     node-version-file: package.json   # or .nvmrc, or node-version: "20"
       - name: Install dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           corepack enable || true
@@ -85,6 +89,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      packages: read
     steps:
       - name: Checkout immutable event revision
         env:
@@ -100,6 +105,8 @@ jobs:
           git checkout --detach FETCH_HEAD
           git remote set-url origin "https://github.com/${REPOSITORY}.git"
       - name: Install dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           corepack enable || true
@@ -121,6 +128,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+      packages: read
     steps:
       - name: Checkout immutable event revision
         env:
@@ -136,6 +144,8 @@ jobs:
           git checkout --detach FETCH_HEAD
           git remote set-url origin "https://github.com/${REPOSITORY}.git"
       - name: Install dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           corepack enable || true

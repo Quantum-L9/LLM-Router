@@ -88,7 +88,7 @@ export function validateBudgetConfig(config: BudgetConfig): void {
 }
 
 export function evaluateBudgetAdmission(input: BudgetAdmissionInput): ThrottleDecision {
-  const { state, config, task, estimatedCost, globalMonthSpend, globalReservedSpend, globalMonthlyHardCeiling } = input;
+  const { state, task, estimatedCost, globalMonthSpend, globalReservedSpend, globalMonthlyHardCeiling } = input;
   const projectedMonth = state.monthSpend + state.reservedSpend + estimatedCost;
   const projectedWeek = state.weekSpend + state.reservedSpend + estimatedCost;
   const projectedGlobal = globalMonthSpend + globalReservedSpend + estimatedCost;
