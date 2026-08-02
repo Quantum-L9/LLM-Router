@@ -8,7 +8,8 @@ on:
 
 jobs:
   l9_pr_pipeline:
-    uses: Quantum-L9/l9-ci-core/.github/workflows/pr-pipeline.yml@v1
+    # Local kernel: l9-ci-core@v1 omits GitHub Packages auth for @quantum-l9/* deps.
+    uses: ./.github/workflows/l9-pr-pipeline-kernel.yml
     secrets: inherit
     with:
       python-version: "3.12"
