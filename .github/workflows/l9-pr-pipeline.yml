@@ -1,5 +1,6 @@
-# Quantum-L9 org starter — Full PR validation pipeline (lint, type-check, tests).
-# Local Node validate path: l9-ci-core pr-pipeline@v1 omits GitHub Packages auth.
+# Quantum-L9 — PR validate with GitHub Packages auth.
+# l9-ci-core pr-pipeline@v1 omits registry-url/NODE_AUTH_TOKEN; private
+# @quantum-l9/* deps then 401. Mirror CI job auth (ci.yml).
 name: "L9 PR Pipeline"
 on:
   pull_request:
@@ -18,19 +19,13 @@ jobs:
     env:
       NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.0
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: "20"
+          node-version: "20.19.0"
           cache: npm
           registry-url: https://npm.pkg.github.com
-      - name: Install Node dependencies
-        run: npm ci
-      - name: Lint (ESLint)
-        run: npm run lint
-      - name: Type-check (tsc)
-        run: npm run verify:types
-      - name: Tests (Vitest)
-        run: npm test
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run verify:types
+      - run: npm test
