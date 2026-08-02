@@ -12,6 +12,4 @@ jobs:
     uses: ./.github/workflows/l9-pr-pipeline-kernel.yml
     secrets: inherit
     with:
-      python-version: "3.12"
-      run-security: true
       working-directory: "."
