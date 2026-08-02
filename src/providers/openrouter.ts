@@ -18,7 +18,7 @@ import { GeneralModel as GeneralModelValue } from '../types.js';
 const MODEL_IDS: Record<GeneralModel, string> = {
   [GeneralModelValue.GPT4O_MINI]: 'openai/gpt-4o-mini',
   [GeneralModelValue.GEMINI_FLASH]: 'google/gemini-2.5-flash',
-  [GeneralModelValue.CLAUDE_HAIKU]: 'anthropic/claude-haiku-4',
+  [GeneralModelValue.CLAUDE_HAIKU]: 'anthropic/claude-haiku-4.5',
   [GeneralModelValue.GPT4O]: 'openai/gpt-4o',
   [GeneralModelValue.CLAUDE_SONNET]: 'anthropic/claude-sonnet-4',
   [GeneralModelValue.GEMINI_PRO]: 'google/gemini-2.5-pro',
