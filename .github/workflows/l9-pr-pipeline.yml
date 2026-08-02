@@ -1,4 +1,5 @@
-# Quantum-L9 org starter — Full PR validation pipeline (lint, type-check, tests, security). Calls l9-ci-core kernel; do not add logic here.
+# Quantum-L9 org starter — Full PR validation pipeline (lint, type-check, tests).
+# Local Node validate path: l9-ci-core pr-pipeline@v1 omits GitHub Packages auth.
 name: "L9 PR Pipeline"
 on:
   pull_request:
@@ -6,10 +7,30 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   l9_pr_pipeline:
-    # Local kernel: l9-ci-core@v1 omits GitHub Packages auth for @quantum-l9/* deps.
-    uses: ./.github/workflows/l9-pr-pipeline-kernel.yml
-    secrets: inherit
-    with:
-      working-directory: "."
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+          cache: npm
+          registry-url: https://npm.pkg.github.com
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Lint (ESLint)
+        run: npm run lint
+      - name: Type-check (tsc)
+        run: npm run verify:types
+      - name: Tests (Vitest)
+        run: npm test
