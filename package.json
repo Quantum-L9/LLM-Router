@@ -35,7 +35,7 @@
     "registry": "https://npm.pkg.github.com"
   },
   "dependencies": {
-    "openai": "^6.48.0",
+    "openai": "^7.2.0",
     "zod": "^4.4.3",
     "@quantum-l9/graphiti-memory-client": "^2.0.0"
   },
