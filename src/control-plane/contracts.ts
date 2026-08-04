@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { compareCodeUnits } from './canonical-json.js';
 
 const trimmed = (label: string, max = 512) => z.string().min(1, `${label} is required`).max(max).refine(value => value === value.trim(), `${label} must not contain surrounding whitespace`);
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/, 'expected lowercase SHA-256 hex');
@@ -6,7 +7,7 @@ const routeIdentity = z.string().regex(/^route_[0-9a-f]{32}$/);
 const planIdentity = z.string().regex(/^plan_[0-9a-f]{32}$/);
 const sortedUnique = <T extends z.ZodTypeAny>(item: T) => z.array(item).superRefine((values, context) => {
   const serialized = values.map(value => typeof value === 'string' ? value : JSON.stringify(value));
-  const expected = [...new Set(serialized)].sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+  const expected = [...new Set(serialized)].sort(compareCodeUnits);
   if (serialized.length !== expected.length || serialized.some((value, index) => value !== expected[index])) context.addIssue({ code: 'custom', message: 'array must be sorted and unique' });
 });
 
@@ -121,7 +122,7 @@ export type LLMRoutePlan = z.infer<typeof LLMRoutePlanSchema>;
 export type LLMRoutePlanInput = Omit<LLMRoutePlan, 'schema_version' | 'route_fingerprint' | 'plan_id' | 'content_hash'>;
 
 export const LLM_EXECUTION_RECORD_SCHEMA_VERSION = 'l9-llm-execution-record/v1' as const;
-export const LLMExecutionRecordSchema = z.object({
+const LLMExecutionRecordObject = z.object({
   schema_version: z.literal(LLM_EXECUTION_RECORD_SCHEMA_VERSION),
   request_id: trimmed('request_id', 256),
   plan_id: planIdentity,
@@ -154,16 +155,33 @@ export const LLMExecutionRecordSchema = z.object({
   finish_reason: trimmed('finish_reason', 256).nullable(),
   generated_at: z.string().datetime({ offset: true }),
   content_hash: sha256,
-}).strict().superRefine((record, context) => {
-  if (record.total_tokens !== record.input_tokens + record.output_tokens) context.addIssue({ code: 'custom', path: ['total_tokens'], message: 'total_tokens must equal input_tokens + output_tokens' });
-  if (record.fallback_used !== (record.fallback_from !== null)) context.addIssue({ code: 'custom', path: ['fallback_from'], message: 'fallback metadata is inconsistent' });
-  if (record.fallback_from && record.fallback_from.provider === record.provider && record.fallback_from.model === record.model) context.addIssue({ code: 'custom', path: ['fallback_from'], message: 'fallback origin cannot equal the final route' });
-  if (record.validation_status === 'failed' && !record.failure_reason) context.addIssue({ code: 'custom', path: ['failure_reason'], message: 'failed validation requires a failure reason' });
-  if (record.validation_status === 'blocked' && !record.failure_reason) context.addIssue({ code: 'custom', path: ['failure_reason'], message: 'blocked validation requires a reason' });
-  if (record.validation_status === 'passed' && record.schema_valid !== true) context.addIssue({ code: 'custom', path: ['schema_valid'], message: 'passed validation requires schema_valid=true' });
-  if (record.validation_status === 'passed' && record.failure_reason !== null) context.addIssue({ code: 'custom', path: ['failure_reason'], message: 'passed validation cannot carry a failure reason' });
-  if (record.validation_status === 'not_run' && (record.schema_valid !== null || record.downstream_accepted !== null || record.failure_reason !== null)) context.addIssue({ code: 'custom', path: ['validation_status'], message: 'not_run validation cannot carry validation outcomes' });
-  if (record.downstream_accepted === true && record.validation_status !== 'passed') context.addIssue({ code: 'custom', path: ['downstream_accepted'], message: 'accepted output requires passed validation' });
+}).strict();
+type LLMExecutionRecordShape = z.infer<typeof LLMExecutionRecordObject>;
+type ExecutionRecordIssue = { path: string[]; message: string };
+
+function tokenAndFallbackIssues(record: LLMExecutionRecordShape): ExecutionRecordIssue[] {
+  const issues: ExecutionRecordIssue[] = [];
+  if (record.total_tokens !== record.input_tokens + record.output_tokens) issues.push({ path: ['total_tokens'], message: 'total_tokens must equal input_tokens + output_tokens' });
+  if (record.fallback_used !== (record.fallback_from !== null)) issues.push({ path: ['fallback_from'], message: 'fallback metadata is inconsistent' });
+  if (record.fallback_from && record.fallback_from.provider === record.provider && record.fallback_from.model === record.model) issues.push({ path: ['fallback_from'], message: 'fallback origin cannot equal the final route' });
+  return issues;
+}
+
+function validationStatusIssues(record: LLMExecutionRecordShape): ExecutionRecordIssue[] {
+  const issues: ExecutionRecordIssue[] = [];
+  if (record.validation_status === 'failed' && !record.failure_reason) issues.push({ path: ['failure_reason'], message: 'failed validation requires a failure reason' });
+  if (record.validation_status === 'blocked' && !record.failure_reason) issues.push({ path: ['failure_reason'], message: 'blocked validation requires a reason' });
+  if (record.validation_status === 'passed' && record.schema_valid !== true) issues.push({ path: ['schema_valid'], message: 'passed validation requires schema_valid=true' });
+  if (record.validation_status === 'passed' && record.failure_reason !== null) issues.push({ path: ['failure_reason'], message: 'passed validation cannot carry a failure reason' });
+  if (record.validation_status === 'not_run' && (record.schema_valid !== null || record.downstream_accepted !== null || record.failure_reason !== null)) issues.push({ path: ['validation_status'], message: 'not_run validation cannot carry validation outcomes' });
+  if (record.downstream_accepted === true && record.validation_status !== 'passed') issues.push({ path: ['downstream_accepted'], message: 'accepted output requires passed validation' });
+  return issues;
+}
+
+export const LLMExecutionRecordSchema = LLMExecutionRecordObject.superRefine((record, context) => {
+  for (const issue of [...tokenAndFallbackIssues(record), ...validationStatusIssues(record)]) {
+    context.addIssue({ code: 'custom', path: issue.path, message: issue.message });
+  }
 });
 export type LLMExecutionRecord = z.infer<typeof LLMExecutionRecordSchema>;
 export type LLMExecutionRecordInput = Omit<LLMExecutionRecord, 'schema_version' | 'content_hash'>;

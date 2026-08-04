@@ -28,7 +28,9 @@ const MODEL_IDS: Record<GeneralModel, string> = {
 };
 
 const MAX_INLINE_IMAGE_BYTES = 10 * 1024 * 1024;
-const SAFE_DATA_URI = /^data:image\/(png|jpeg|webp|gif);base64,([A-Za-z0-9+/=]+)$/i;
+// The `i` flag makes the scheme and the base64 payload case-insensitive, so the
+// character class lists each letter range once (A-Z also matches a-z under `i`).
+const SAFE_DATA_URI = /^data:image\/(png|jpeg|webp|gif);base64,([A-Z0-9+/=]+)$/i;
 
 function isPrivateIpv4(hostname: string): boolean {
   const parts = hostname.split('.');
@@ -41,9 +43,9 @@ function isPrivateIpv4(hostname: string): boolean {
 
 function mappedIpv4FromIpv6(hostname: string): string | undefined {
   const normalized = hostname.toLowerCase();
-  const dotted = normalized.match(/^(?:0*:)*ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  const dotted = /^(?:0*:)*ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(normalized);
   if (dotted) return dotted[1];
-  const hex = normalized.match(/^(?:0*:)*ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  const hex = /^(?:0*:)*ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(normalized);
   if (!hex) return undefined;
   const high = Number.parseInt(hex[1], 16);
   const low = Number.parseInt(hex[2], 16);

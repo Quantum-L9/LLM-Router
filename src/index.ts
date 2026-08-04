@@ -58,7 +58,10 @@ export function getDowngradedModel(
   maxTier: 'fast' | 'strategic' | 'critical',
 ): GeneralModel | SonarModel {
   if (maxTier === 'critical') return original;
-  if (provider === Provider.PERPLEXITY) return maxTier === 'fast' ? SonarModel.SONAR : original === SonarModel.SONAR_DEEP_RESEARCH ? SonarModel.SONAR_REASONING_PRO : original;
+  if (provider === Provider.PERPLEXITY) {
+    if (maxTier === 'fast') return SonarModel.SONAR;
+    return original === SonarModel.SONAR_DEEP_RESEARCH ? SonarModel.SONAR_REASONING_PRO : original;
+  }
   if (maxTier === 'fast') return GeneralModel.GPT4O_MINI;
   return [GeneralModel.CLAUDE_OPUS, GeneralModel.O1, GeneralModel.O3].includes(original as GeneralModel) ? GeneralModel.CLAUDE_SONNET : original;
 }
@@ -123,34 +126,7 @@ export class L9LLMRouter {
       }
 
       permit = this.circuitBreaker.acquire(decision.provider, this.clock());
-      let response: LLMResponse;
-      if (decision.provider === Provider.PERPLEXITY) {
-        const config = resolvePerplexityConfig(task);
-        if (!Object.values(SonarModel).includes(decision.model as SonarModel)) throw new Error('Perplexity route resolved a non-Sonar model');
-        config.model = decision.model as SonarModel;
-        if (options?.consensus && config.variations > 1) {
-          const consensus = await this.perplexity.completeWithConsensus(config, effectiveSystemPrompt, userPrompt, options.assistantContext, options.signal);
-          response = {
-            ...consensus.best,
-            inputTokens: consensus.aggregate.inputTokens,
-            outputTokens: consensus.aggregate.outputTokens,
-            totalTokens: consensus.aggregate.totalTokens,
-            cost: consensus.aggregate.cost,
-            latencyMs: consensus.aggregate.latencyMs,
-            citations: consensus.aggregate.citations,
-          };
-        } else {
-          response = await this.perplexity.complete(config, effectiveSystemPrompt, userPrompt, options?.assistantContext, options?.signal);
-        }
-      } else if (VISION_TASKS.has(task.type) && images?.length) {
-        const config = resolveVisionConfig(task.type as TaskType.VISUAL_QA | TaskType.SCREENSHOT_ANALYSIS | TaskType.LAYOUT_VALIDATION, task.complexity, images.length);
-        config.model = decision.model as GeneralModel;
-        response = await this.openrouter.completeWithVision(config, effectiveSystemPrompt, userPrompt, images, options?.signal);
-      } else {
-        const config = resolveGeneralConfig(task);
-        config.model = decision.model as GeneralModel;
-        response = await this.openrouter.completeWithFallback(config, getFallbackChain(config.model), effectiveSystemPrompt, userPrompt, options?.signal);
-      }
+      const response = await this.dispatchProvider(task, decision, effectiveSystemPrompt, userPrompt, images, options);
 
       providerCompleted = true;
       this.circuitBreaker.recordSuccess(permit);
@@ -170,11 +146,50 @@ export class L9LLMRouter {
         else this.circuitBreaker.release(permit, this.clock());
       }
       if (providerCompleted) throw error;
-      if (error instanceof BudgetReservationError) throw new BudgetExhaustedError(error.message, task, decision, error);
-      if (error instanceof CircuitOpenError) throw error;
-      if (error instanceof Error && ['TaskValidationError', 'UnsafeImageUrlError'].includes(error.name)) throw error;
-      throw classifyProviderError(error, decision.provider);
+      throw this.toExecutionError(error, task, decision);
     }
+  }
+
+  private dispatchProvider(
+    task: TaskDescriptor,
+    decision: RoutingDecision,
+    effectiveSystemPrompt: string,
+    userPrompt: string,
+    images: string[] | undefined,
+    options: { images?: string[]; assistantContext?: string; consensus?: boolean; signal?: AbortSignal } | undefined,
+  ): Promise<LLMResponse> {
+    if (decision.provider === Provider.PERPLEXITY) {
+      const config = resolvePerplexityConfig(task);
+      if (!Object.values(SonarModel).includes(decision.model as SonarModel)) throw new Error('Perplexity route resolved a non-Sonar model');
+      config.model = decision.model as SonarModel;
+      if (options?.consensus && config.variations > 1) {
+        return this.perplexity.completeWithConsensus(config, effectiveSystemPrompt, userPrompt, options.assistantContext, options.signal).then(consensus => ({
+          ...consensus.best,
+          inputTokens: consensus.aggregate.inputTokens,
+          outputTokens: consensus.aggregate.outputTokens,
+          totalTokens: consensus.aggregate.totalTokens,
+          cost: consensus.aggregate.cost,
+          latencyMs: consensus.aggregate.latencyMs,
+          citations: consensus.aggregate.citations,
+        }));
+      }
+      return this.perplexity.complete(config, effectiveSystemPrompt, userPrompt, options?.assistantContext, options?.signal);
+    }
+    if (VISION_TASKS.has(task.type) && images?.length) {
+      const config = resolveVisionConfig(task.type as TaskType.VISUAL_QA | TaskType.SCREENSHOT_ANALYSIS | TaskType.LAYOUT_VALIDATION, task.complexity, images.length);
+      config.model = decision.model as GeneralModel;
+      return this.openrouter.completeWithVision(config, effectiveSystemPrompt, userPrompt, images, options?.signal);
+    }
+    const config = resolveGeneralConfig(task);
+    config.model = decision.model as GeneralModel;
+    return this.openrouter.completeWithFallback(config, getFallbackChain(config.model), effectiveSystemPrompt, userPrompt, options?.signal);
+  }
+
+  private toExecutionError(error: unknown, task: TaskDescriptor, decision: RoutingDecision): Error {
+    if (error instanceof BudgetReservationError) return new BudgetExhaustedError(error.message, task, decision, error);
+    if (error instanceof CircuitOpenError) return error;
+    if (error instanceof Error && ['TaskValidationError', 'UnsafeImageUrlError'].includes(error.name)) return error;
+    return classifyProviderError(error, decision.provider);
   }
 
   initClient(clientId: string, overrides?: Partial<BudgetConfig>): Promise<void> { return this.budgetStore.initClient(clientId, overrides); }

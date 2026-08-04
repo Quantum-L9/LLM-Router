@@ -1,5 +1,5 @@
 import type { ZodError, ZodType } from 'zod';
-import { canonicalize, CanonicalJsonError, canonicalJson, sha256Hex } from './canonical-json.js';
+import { canonicalize, CanonicalJsonError, canonicalJson, compareCodeUnits, sha256Hex } from './canonical-json.js';
 import {
   LLM_EXECUTION_RECORD_SCHEMA_VERSION,
   LLM_FEEDBACK_SIGNAL_SCHEMA_VERSION,
@@ -19,9 +19,13 @@ import {
   type TaskProfileInput,
 } from './contracts.js';
 
+function formatControlPlaneIssues(issues: Array<{ path: string; message: string }>): string {
+  return issues.map(issue => `${issue.path || '(root)'}: ${issue.message}`).join('; ');
+}
+
 export class ControlPlaneValidationError extends Error {
   constructor(public readonly artifact: string, public readonly issues: Array<{ path: string; message: string; code: string }>) {
-    super(`Invalid ${artifact}: ${issues.map(issue => `${issue.path || '(root)'}: ${issue.message}`).join('; ')}`);
+    super(`Invalid ${artifact}: ${formatControlPlaneIssues(issues)}`);
     this.name = 'ControlPlaneValidationError';
   }
   toJSON(): Record<string, unknown> { return { name: this.name, message: this.message, artifact: this.artifact, issues: this.issues }; }
@@ -49,10 +53,10 @@ function normalizeInput<T>(value: T, artifact: string): T {
 }
 
 function normalizeString(value: string): string { return value.normalize('NFC'); }
-function sortedUniqueStrings(values: string[]): string[] { return [...new Set(values.map(normalizeString))].sort((left, right) => left < right ? -1 : left > right ? 1 : 0); }
+function sortedUniqueStrings(values: string[]): string[] { return [...new Set(values.map(normalizeString))].sort(compareCodeUnits); }
 function sortedUniqueTargets<T extends { provider: string; model: string }>(values: T[]): T[] {
   const normalized = values.map(value => ({ ...value, provider: normalizeString(value.provider), model: normalizeString(value.model) }));
-  return [...new Map(normalized.map(value => [`${value.provider}\u0000${value.model}`, value])).values()].sort((left, right) => left.provider === right.provider ? (left.model < right.model ? -1 : left.model > right.model ? 1 : 0) : (left.provider < right.provider ? -1 : 1)) as T[];
+  return [...new Map(normalized.map(value => [`${value.provider}\u0000${value.model}`, value])).values()].sort((left, right) => left.provider === right.provider ? compareCodeUnits(left.model, right.model) : compareCodeUnits(left.provider, right.provider)) as T[];
 }
 
 function deepFreeze<T>(value: T): T {

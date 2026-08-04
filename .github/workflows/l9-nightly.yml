@@ -8,7 +8,6 @@ on:
 jobs:
   l9_nightly:
     uses: Quantum-L9/l9-ci-core/.github/workflows/nightly.yml@v1
-    secrets: inherit
     with:
       python-version: "3.12"
       run-extended-tests: true

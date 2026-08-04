@@ -24,7 +24,7 @@ for p in "${ORDER[@]}"; do
   HAS_LOCK=no
   git cat-file -e "$OLD:package-lock.json" 2>/dev/null && HAS_LOCK=yes
 
-  if [ "$HAS_LOCK" = no ]; then
+  if [[ "$HAS_LOCK" = no ]]; then
     for f in .github/workflows/ci.yml .github/workflows/supply-chain.yml .github/workflows/publish.yml; do
       if git cat-file -e "$OLD:$f" 2>/dev/null; then
         git show "$OLD:$f" \

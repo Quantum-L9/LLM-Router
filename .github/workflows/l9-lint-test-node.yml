@@ -72,16 +72,17 @@ jobs:
           set -euo pipefail
           corepack enable || true
           if [ -f pnpm-lock.yaml ]; then
-            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile
+            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile --ignore-scripts
           elif [ -f yarn.lock ]; then
-            corepack prepare yarn@stable --activate && yarn install --immutable
+            corepack prepare yarn@stable --activate && yarn install --immutable --mode=skip-build
           elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-            npm ci
+            npm ci --ignore-scripts
           else
-            npm install
+            echo "::error::No lockfile found (package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, or yarn.lock). Refusing an unpinned install; commit a lockfile for reproducible, verified dependencies." >&2
+            exit 1
           fi
       - name: ESLint
-        run: npx --no-install eslint . || npx eslint .
+        run: npx --no-install eslint .
 
   typecheck:
     name: tsc --noEmit
@@ -111,16 +112,17 @@ jobs:
           set -euo pipefail
           corepack enable || true
           if [ -f pnpm-lock.yaml ]; then
-            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile
+            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile --ignore-scripts
           elif [ -f yarn.lock ]; then
-            corepack prepare yarn@stable --activate && yarn install --immutable
+            corepack prepare yarn@stable --activate && yarn install --immutable --mode=skip-build
           elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-            npm ci
+            npm ci --ignore-scripts
           else
-            npm install
+            echo "::error::No lockfile found (package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, or yarn.lock). Refusing an unpinned install; commit a lockfile for reproducible, verified dependencies." >&2
+            exit 1
           fi
       - name: Type-check (tsc --noEmit)
-        run: npx --no-install tsc --noEmit || npx tsc --noEmit
+        run: npx --no-install tsc --noEmit
 
   test:
     name: Vitest
@@ -150,17 +152,18 @@ jobs:
           set -euo pipefail
           corepack enable || true
           if [ -f pnpm-lock.yaml ]; then
-            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile
+            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile --ignore-scripts
           elif [ -f yarn.lock ]; then
-            corepack prepare yarn@stable --activate && yarn install --immutable
+            corepack prepare yarn@stable --activate && yarn install --immutable --mode=skip-build
           elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-            npm ci
+            npm ci --ignore-scripts
           else
-            npm install
+            echo "::error::No lockfile found (package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, or yarn.lock). Refusing an unpinned install; commit a lockfile for reproducible, verified dependencies." >&2
+            exit 1
           fi
       - name: Vitest (one-shot, non-interactive)
         env:
           CI: "true"
-        run: npx --no-install vitest run || npx vitest run
+        run: npx --no-install vitest run
         # For coverage, install @vitest/coverage-v8 and use:
         #   npx vitest run --coverage
