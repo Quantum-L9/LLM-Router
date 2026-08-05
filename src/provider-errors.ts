@@ -88,6 +88,35 @@ function retryAfterMs(error: unknown): number | undefined {
   return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
 }
 
+interface FailureClassification {
+  kind: ProviderFailureKind;
+  retryable: boolean;
+}
+
+function classifyLocalError(name: string | undefined): FailureClassification | undefined {
+  if (!name || !LOCAL_ERROR_NAMES.has(name)) return undefined;
+  return { kind: name === 'AbortError' ? 'cancelled' : 'local', retryable: false };
+}
+
+function classifyByStatus(status: number | undefined): FailureClassification | undefined {
+  if (status === 429) return { kind: 'rate_limit', retryable: true };
+  if (status !== undefined && status >= 500) return { kind: 'server', retryable: true };
+  if (status !== undefined && status >= 400) return { kind: 'client', retryable: false };
+  return undefined;
+}
+
+function classifyByCode(code: string | undefined, name: string | undefined): FailureClassification | undefined {
+  if (code === 'ETIMEDOUT' || code === 'ESOCKETTIMEDOUT' || name === 'TimeoutError') return { kind: 'timeout', retryable: true };
+  if (code && ['ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'ENOTFOUND'].includes(code)) return { kind: 'network', retryable: true };
+  return undefined;
+}
+
+function classifyByMessage(message: string): FailureClassification | undefined {
+  if (/timeout/i.test(message)) return { kind: 'timeout', retryable: true };
+  if (/network|socket|connection/i.test(message)) return { kind: 'network', retryable: true };
+  return undefined;
+}
+
 export function classifyProviderError(error: unknown, provider: Provider): ProviderRequestError {
   if (error instanceof ProviderRequestError) return error;
   const name = error instanceof Error ? error.name : stringField(error, 'name');
@@ -96,32 +125,13 @@ export function classifyProviderError(error: unknown, provider: Provider): Provi
   const code = stringField(error, 'code', 'type');
   const requestId = stringField(error, 'request_id', 'requestId') ?? headerValue(error, 'x-request-id');
 
-  let kind: ProviderFailureKind = 'unknown';
-  let retryable = false;
-
-  if (name && LOCAL_ERROR_NAMES.has(name)) {
-    kind = name === 'AbortError' ? 'cancelled' : 'local';
-  } else if (status === 429) {
-    kind = 'rate_limit';
-    retryable = true;
-  } else if (status !== undefined && status >= 500) {
-    kind = 'server';
-    retryable = true;
-  } else if (status !== undefined && status >= 400) {
-    kind = 'client';
-  } else if (code === 'ETIMEDOUT' || code === 'ESOCKETTIMEDOUT' || name === 'TimeoutError') {
-    kind = 'timeout';
-    retryable = true;
-  } else if (code && ['ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'ENOTFOUND'].includes(code)) {
-    kind = 'network';
-    retryable = true;
-  } else if (/timeout/i.test(message)) {
-    kind = 'timeout';
-    retryable = true;
-  } else if (/network|socket|connection/i.test(message)) {
-    kind = 'network';
-    retryable = true;
-  }
+  // Precedence is preserved from the original if/else-if chain: local error
+  // names, then HTTP status, then error codes, then message heuristics.
+  const { kind, retryable } = classifyLocalError(name)
+    ?? classifyByStatus(status)
+    ?? classifyByCode(code, name)
+    ?? classifyByMessage(message)
+    ?? { kind: 'unknown', retryable: false };
 
   return new ProviderRequestError(message, {
     provider,

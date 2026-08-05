@@ -60,6 +60,10 @@ function publicIssues(error: z.ZodError): PublicIssue[] {
   }));
 }
 
+function formatIssues(issues: PublicIssue[]): string {
+  return issues.map(issue => `${issue.path.map(String).join('.') || '(root)'}: ${issue.message}`).join('; ');
+}
+
 export class TaskValidationError extends Error {
   constructor(message: string, public readonly issues: PublicIssue[]) { super(message); this.name = 'TaskValidationError'; }
   toJSON(): Record<string, unknown> { return { name: this.name, message: this.message, issues: this.issues }; }
@@ -74,7 +78,7 @@ function parseTaskWithSchema<T>(schema: z.ZodType<T>, task: unknown): T {
   const result = schema.safeParse(task);
   if (!result.success) {
     const issues = publicIssues(result.error);
-    throw new TaskValidationError(`Invalid TaskDescriptor: ${issues.map(issue => `${issue.path.map(String).join('.') || '(root)'}: ${issue.message}`).join('; ')}`, issues);
+    throw new TaskValidationError(`Invalid TaskDescriptor: ${formatIssues(issues)}`, issues);
   }
   return result.data;
 }
@@ -91,7 +95,7 @@ export function parseRouterConfig(config: unknown): RouterConfig {
   const result = RouterConfigSchema.safeParse(config);
   if (!result.success) {
     const issues = publicIssues(result.error);
-    throw new RouterConfigValidationError(`Invalid RouterConfig: ${issues.map(issue => `${issue.path.map(String).join('.') || '(root)'}: ${issue.message}`).join('; ')}`, issues);
+    throw new RouterConfigValidationError(`Invalid RouterConfig: ${formatIssues(issues)}`, issues);
   }
   return result.data as RouterConfig;
 }

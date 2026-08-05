@@ -25,7 +25,7 @@ jobs:
           cache: "npm"
           registry-url: https://npm.pkg.github.com
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Type-check
         run: |
           if node -e "const s=(require('./package.json').scripts||{});process.exit(s.typecheck?0:1)"; then
@@ -33,7 +33,7 @@ jobs:
           elif node -e "const s=(require('./package.json').scripts||{});process.exit(s['verify:types']?0:1)"; then
             npm run verify:types
           else
-            npx tsc --noEmit
+            npx --no-install tsc --noEmit
           fi
 
   test-by-segment:
@@ -49,9 +49,9 @@ jobs:
           cache: "npm"
           registry-url: https://npm.pkg.github.com
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Run tests (Vitest)
-        run: npx vitest run
+        run: npx --no-install vitest run
 
   publish-dry-run:
     needs: test-by-segment
@@ -66,7 +66,7 @@ jobs:
           cache: "npm"
           registry-url: https://npm.pkg.github.com
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Publish dry-run (all public packages)
         run: |
           dirs="."
@@ -87,11 +87,9 @@ jobs:
 
   security:
     uses: Quantum-L9/l9-ci-core/.github/workflows/security.yml@v1
-    secrets: inherit
     with:
       python-version: "3.12"
       run-npm-audit: true
 
   scorecard:
     uses: Quantum-L9/l9-ci-core/.github/workflows/scorecard.yml@v1
-    secrets: inherit

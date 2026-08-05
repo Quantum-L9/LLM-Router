@@ -7,4 +7,6 @@ const task: TaskDescriptor = { type: TaskType.CLASSIFICATION, complexity: TaskCo
 const router: L9LLMRouter | undefined = undefined;
 const openrouter: OpenRouterClient | undefined = undefined;
 const perplexity: PerplexityClient | undefined = undefined;
-void task; void router; void openrouter; void perplexity; void VIEWPORTS;
+// Reference every imported symbol so the declaration build proves each public
+// type and value is consumable from the packaged `dist/` entry points.
+export const declarationConsumerProbe = [task, router, openrouter, perplexity, VIEWPORTS] as const;

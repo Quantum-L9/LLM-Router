@@ -7,7 +7,6 @@ on:
 jobs:
   l9_release:
     uses: Quantum-L9/l9-ci-core/.github/workflows/release-publish.yml@v1
-    secrets: inherit
     with:
       python-version: "3.12"
       publish-to-pypi: true
