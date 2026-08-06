@@ -75,6 +75,11 @@ describe('RouterConfig openrouterBaseUrl validation', () => {
     expect(parsed.openrouterBaseUrl).toBe('https://gateway.example.com/v1');
   });
 
+  it('accepts http(s) schemes case-insensitively (URL.protocol)', () => {
+    const parsed = parseRouterConfig({ ...base, openrouterBaseUrl: 'HTTPS://gateway.example.com/v1' });
+    expect(parsed.openrouterBaseUrl).toBe('HTTPS://gateway.example.com/v1');
+  });
+
   it('rejects a malformed openrouterBaseUrl at config parse time', () => {
     expect(() => parseRouterConfig({ ...base, openrouterBaseUrl: 'not a url' })).toThrowError(RouterConfigValidationError);
   });

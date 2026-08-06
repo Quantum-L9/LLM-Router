@@ -22,13 +22,11 @@ for p in "${ORDER[@]}"; do
   GIT_INDEX_FILE="$TMPIDX" git read-tree "$OLD^{tree}"
 
   NEEDS=no
-  if git show "$OLD:package.json" | grep -q 'lint:boundary'; then
-    if ! git show "$OLD:eslint.config.js" | grep -q 'no-restricted-imports'; then
-      NEEDS=yes
-    fi
+  if git show "$OLD:package.json" | grep -q 'lint:boundary' && ! git show "$OLD:eslint.config.js" | grep -q 'no-restricted-imports'; then
+    NEEDS=yes
   fi
 
-  if [ "$NEEDS" = yes ]; then
+  if [[ "$NEEDS" = yes ]]; then
     git show "$OLD:eslint.config.js" > /tmp/bc-$p.js
     lastline=$(grep -n '^);$' /tmp/bc-$p.js | tail -1 | cut -d: -f1)
     head -n $((lastline - 1)) /tmp/bc-$p.js > /tmp/bc-$p-new.js

@@ -43,7 +43,14 @@ export const RouterConfigSchema = z.object({
   perplexityApiKey: z.string().min(1, 'perplexityApiKey is required'),
   openrouterApiKey: z.string().min(1, 'openrouterApiKey is required'),
   openrouterBaseUrl: z.string().url('openrouterBaseUrl must be an absolute URL').refine(
-    value => value.startsWith('https://') || value.startsWith('http://'),
+    (value) => {
+      try {
+        const protocol = new URL(value).protocol;
+        return protocol === 'https:' || protocol === 'http:';
+      } catch {
+        return false;
+      }
+    },
     { message: 'openrouterBaseUrl must use http(s)' },
   ).optional(),
   appName: z.string().min(1).optional(),
@@ -64,6 +71,10 @@ function publicIssues(error: z.ZodError): PublicIssue[] {
   }));
 }
 
+function formatIssues(issues: PublicIssue[]): string {
+  return issues.map(issue => `${issue.path.map(String).join('.') || '(root)'}: ${issue.message}`).join('; ');
+}
+
 export class TaskValidationError extends Error {
   constructor(message: string, public readonly issues: PublicIssue[]) { super(message); this.name = 'TaskValidationError'; }
   toJSON(): Record<string, unknown> { return { name: this.name, message: this.message, issues: this.issues }; }
@@ -78,7 +89,7 @@ function parseTaskWithSchema<T>(schema: z.ZodType<T>, task: unknown): T {
   const result = schema.safeParse(task);
   if (!result.success) {
     const issues = publicIssues(result.error);
-    throw new TaskValidationError(`Invalid TaskDescriptor: ${issues.map(issue => `${issue.path.map(String).join('.') || '(root)'}: ${issue.message}`).join('; ')}`, issues);
+    throw new TaskValidationError(`Invalid TaskDescriptor: ${formatIssues(issues)}`, issues);
   }
   return result.data;
 }
@@ -95,7 +106,7 @@ export function parseRouterConfig(config: unknown): RouterConfig {
   const result = RouterConfigSchema.safeParse(config);
   if (!result.success) {
     const issues = publicIssues(result.error);
-    throw new RouterConfigValidationError(`Invalid RouterConfig: ${issues.map(issue => `${issue.path.map(String).join('.') || '(root)'}: ${issue.message}`).join('; ')}`, issues);
+    throw new RouterConfigValidationError(`Invalid RouterConfig: ${formatIssues(issues)}`, issues);
   }
   return result.data as RouterConfig;
 }

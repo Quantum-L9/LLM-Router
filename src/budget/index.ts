@@ -25,9 +25,96 @@ export interface ThrottleDecision {
   maxModelTier: 'fast' | 'strategic' | 'critical';
 }
 
+export interface GlobalBudgetState {
+  monthSpend: number;
+  reservedSpend: number;
+  ceiling: number;
+  utilization: number;
+}
+
+export interface BudgetAdmissionInput {
+  state: BudgetState;
+  config: BudgetConfig;
+  task: TaskDescriptor;
+  estimatedCost: number;
+  globalMonthSpend: number;
+  globalReservedSpend: number;
+  globalMonthlyHardCeiling: number;
+}
+
+export interface BudgetStore {
+  initClient(clientId: string, overrides?: Partial<BudgetConfig>): Promise<void>;
+  reserveTask(
+    clientId: string,
+    task: TaskDescriptor,
+    estimatedCost: number,
+    now?: Date,
+    idFactory?: () => string,
+  ): Promise<{ decision: ThrottleDecision; reservation: BudgetReservation }>;
+  reconcile(reservationId: string, actualCost: number): Promise<void>;
+  release(reservationId: string): Promise<void>;
+  recordSpend(clientId: string, amount: number): Promise<void>;
+  resetDaily(clientId: string): Promise<void>;
+  resetWeekly(clientId: string): Promise<void>;
+  resetMonthly(clientId: string): Promise<void>;
+  resetGlobalMonthly(): Promise<void>;
+  checkSurgeAllowance(clientId: string, dayOfWeek: number): Promise<boolean>;
+  getClientBudgetReport(clientId: string): Promise<BudgetState>;
+  getAllBudgetReports(): Promise<BudgetState[]>;
+  getGlobalSpend(): Promise<GlobalBudgetState>;
+}
+
 interface ClientRecord {
   state: BudgetState;
   config: BudgetConfig;
+}
+
+export function validateBudgetConfig(config: BudgetConfig): void {
+  const positiveFields: Array<keyof Omit<BudgetConfig, 'surgeThreshold'>> = [
+    'monthlyBudgetPerClient',
+    'weeklyTarget',
+    'weeklyHardCeiling',
+    'globalMonthlyHardCeiling',
+  ];
+  for (const field of positiveFields) {
+    if (!Number.isFinite(config[field]) || config[field] <= 0) throw new RangeError(`${field} must be a finite positive number`);
+  }
+  if (!Number.isFinite(config.surgeThreshold) || config.surgeThreshold < 0 || config.surgeThreshold > 1) {
+    throw new RangeError('surgeThreshold must be between 0 and 1');
+  }
+  if (config.weeklyTarget > config.weeklyHardCeiling) {
+    throw new RangeError('weeklyTarget must not exceed weeklyHardCeiling');
+  }
+}
+
+export function evaluateBudgetAdmission(input: BudgetAdmissionInput): ThrottleDecision {
+  const { state, task, estimatedCost, globalMonthSpend, globalReservedSpend, globalMonthlyHardCeiling } = input;
+  const projectedMonth = state.monthSpend + state.reservedSpend + estimatedCost;
+  const projectedWeek = state.weekSpend + state.reservedSpend + estimatedCost;
+  const projectedGlobal = globalMonthSpend + globalReservedSpend + estimatedCost;
+  let level = ThrottleLevel.NONE;
+  if (projectedMonth > state.monthlyBudget
+      || projectedGlobal > globalMonthlyHardCeiling
+      || (projectedWeek > state.weeklyHardCeiling && !state.surgeAllowance)) {
+    level = ThrottleLevel.HARD;
+  } else if (projectedWeek > state.weekTarget || projectedMonth > state.monthlyBudget * 0.8) {
+    level = ThrottleLevel.SOFT;
+  }
+
+  // Hard ceilings are invariant. Model downgrade cannot make an already-priced
+  // reservation safe because the reservation amount was calculated before this
+  // decision. Reject and let the caller retry with a newly priced task.
+  if (level === ThrottleLevel.HARD) {
+    return { level, reason: 'Hard budget ceiling reached; task deferred', allowTask: false, forceDowngrade: false, maxModelTier: 'fast' };
+  }
+  // Critical tasks may bypass soft throttling, but never a hard ceiling.
+  if (task.complexity === TaskComplexity.CRITICAL) {
+    return { level: ThrottleLevel.NONE, reason: 'Critical task admitted within hard ceilings', allowTask: true, forceDowngrade: false, maxModelTier: 'critical' };
+  }
+  if (level === ThrottleLevel.SOFT) {
+    return { level, reason: 'Soft throttle; cheaper tier required', allowTask: true, forceDowngrade: true, maxModelTier: task.complexity === TaskComplexity.HIGH ? 'strategic' : 'fast' };
+  }
+  return { level, reason: 'Within budget', allowTask: true, forceDowngrade: false, maxModelTier: 'critical' };
 }
 
 export class BudgetTracker {
@@ -46,9 +133,10 @@ export class BudgetTracker {
     if (clientId.trim().length === 0) throw new RangeError('clientId must not be empty');
     const clientConfig = { ...this.config, ...overrides };
     validateBudgetConfig(clientConfig);
+    const existing = this.clients.get(clientId);
     this.clients.set(clientId, {
       config: clientConfig,
-      state: {
+      state: existing?.state ?? {
         clientId,
         monthlyBudget: clientConfig.monthlyBudgetPerClient,
         monthSpend: 0,
@@ -64,23 +152,24 @@ export class BudgetTracker {
         activeReservations: 0,
       },
     });
+    const record = this.getRecord(clientId);
+    record.state.monthlyBudget = clientConfig.monthlyBudgetPerClient;
+    record.state.weekTarget = clientConfig.weeklyTarget;
+    record.state.weeklyHardCeiling = clientConfig.weeklyHardCeiling;
+    this.refreshDerived(record);
   }
 
   evaluateTask(clientId: string, task: TaskDescriptor, estimatedCost: number): ThrottleDecision {
     const record = this.getRecord(clientId);
-    const level = this.computeThrottleLevel(record, estimatedCost);
-    if (task.complexity === TaskComplexity.CRITICAL) {
-      return { level: ThrottleLevel.NONE, reason: 'Critical task; budget override engaged', allowTask: true, forceDowngrade: false, maxModelTier: 'critical' };
-    }
-    if (level === ThrottleLevel.HARD) {
-      if (task.complexity === TaskComplexity.HIGH) return { level, reason: 'Hard throttle; high task downgraded', allowTask: true, forceDowngrade: true, maxModelTier: 'strategic' };
-      if (task.complexity === TaskComplexity.MEDIUM || estimatedCost < 0.005) return { level, reason: 'Hard throttle; task forced to fast tier', allowTask: true, forceDowngrade: true, maxModelTier: 'fast' };
-      return { level, reason: 'Hard throttle; low-value task deferred', allowTask: false, forceDowngrade: false, maxModelTier: 'fast' };
-    }
-    if (level === ThrottleLevel.SOFT) {
-      return { level, reason: 'Soft throttle; cheaper tier required', allowTask: true, forceDowngrade: true, maxModelTier: task.complexity === TaskComplexity.HIGH ? 'strategic' : 'fast' };
-    }
-    return { level, reason: 'Within budget', allowTask: true, forceDowngrade: false, maxModelTier: 'critical' };
+    return evaluateBudgetAdmission({
+      state: record.state,
+      config: record.config,
+      task,
+      estimatedCost,
+      globalMonthSpend: this.globalMonthSpend,
+      globalReservedSpend: this.globalReservedSpend,
+      globalMonthlyHardCeiling: this.config.globalMonthlyHardCeiling,
+    });
   }
 
   reserveTask(
@@ -150,23 +239,13 @@ export class BudgetTracker {
 
   getClientBudgetReport(clientId: string): BudgetState { return { ...this.getRecord(clientId).state }; }
   getAllBudgetReports(): BudgetState[] { return Array.from(this.clients.values(), entry => ({ ...entry.state })); }
-  getGlobalSpend(): { monthSpend: number; reservedSpend: number; ceiling: number; utilization: number } {
+  getGlobalSpend(): GlobalBudgetState {
     return {
       monthSpend: this.globalMonthSpend,
       reservedSpend: this.globalReservedSpend,
       ceiling: this.config.globalMonthlyHardCeiling,
       utilization: (this.globalMonthSpend + this.globalReservedSpend) / this.config.globalMonthlyHardCeiling,
     };
-  }
-
-  private computeThrottleLevel(record: ClientRecord, pendingCost: number): ThrottleLevel {
-    const state = record.state;
-    const projectedMonth = state.monthSpend + state.reservedSpend + pendingCost;
-    const projectedWeek = state.weekSpend + state.reservedSpend + pendingCost;
-    const projectedGlobal = this.globalMonthSpend + this.globalReservedSpend + pendingCost;
-    if (projectedMonth > state.monthlyBudget || projectedGlobal > this.config.globalMonthlyHardCeiling || (projectedWeek > state.weeklyHardCeiling && !state.surgeAllowance)) return ThrottleLevel.HARD;
-    if (projectedWeek > state.weekTarget || projectedMonth > state.monthlyBudget * 0.8) return ThrottleLevel.SOFT;
-    return ThrottleLevel.NONE;
   }
 
   private getRecord(clientId: string): ClientRecord {
@@ -200,28 +279,36 @@ export class BudgetTracker {
     const state = record.state;
     state.remainingMonthly = state.monthlyBudget - state.monthSpend - state.reservedSpend;
     state.remainingWeekly = state.weeklyHardCeiling - state.weekSpend - state.reservedSpend;
-    state.throttleLevel = this.computeThrottleLevel(record, 0);
+    const decision = evaluateBudgetAdmission({
+      state,
+      config: record.config,
+      task: { type: 'classification' as TaskDescriptor['type'], complexity: TaskComplexity.LOW },
+      estimatedCost: 0,
+      globalMonthSpend: this.globalMonthSpend,
+      globalReservedSpend: this.globalReservedSpend,
+      globalMonthlyHardCeiling: this.config.globalMonthlyHardCeiling,
+    });
+    state.throttleLevel = decision.level;
   }
+}
+
+export class InMemoryBudgetStore implements BudgetStore {
+  constructor(readonly tracker: BudgetTracker) {}
+  async initClient(clientId: string, overrides?: Partial<BudgetConfig>): Promise<void> { this.tracker.initClient(clientId, overrides); }
+  async reserveTask(clientId: string, task: TaskDescriptor, estimatedCost: number, now?: Date, idFactory?: () => string) { return this.tracker.reserveTask(clientId, task, estimatedCost, now, idFactory); }
+  async reconcile(reservationId: string, actualCost: number): Promise<void> { this.tracker.reconcile(reservationId, actualCost); }
+  async release(reservationId: string): Promise<void> { this.tracker.release(reservationId); }
+  async recordSpend(clientId: string, amount: number): Promise<void> { this.tracker.recordSpend(clientId, amount); }
+  async resetDaily(clientId: string): Promise<void> { this.tracker.resetDaily(clientId); }
+  async resetWeekly(clientId: string): Promise<void> { this.tracker.resetWeekly(clientId); }
+  async resetMonthly(clientId: string): Promise<void> { this.tracker.resetMonthly(clientId); }
+  async resetGlobalMonthly(): Promise<void> { this.tracker.resetGlobalMonthly(); }
+  async checkSurgeAllowance(clientId: string, dayOfWeek: number): Promise<boolean> { return this.tracker.checkSurgeAllowance(clientId, dayOfWeek); }
+  async getClientBudgetReport(clientId: string): Promise<BudgetState> { return this.tracker.getClientBudgetReport(clientId); }
+  async getAllBudgetReports(): Promise<BudgetState[]> { return this.tracker.getAllBudgetReports(); }
+  async getGlobalSpend(): Promise<GlobalBudgetState> { return this.tracker.getGlobalSpend(); }
 }
 
 export class BudgetReservationError extends Error {
   constructor(message: string) { super(message); this.name = 'BudgetReservationError'; }
-}
-
-function validateBudgetConfig(config: BudgetConfig): void {
-  const positiveFields: Array<keyof Omit<BudgetConfig, 'surgeThreshold'>> = [
-    'monthlyBudgetPerClient',
-    'weeklyTarget',
-    'weeklyHardCeiling',
-    'globalMonthlyHardCeiling',
-  ];
-  for (const field of positiveFields) {
-    if (!Number.isFinite(config[field]) || config[field] <= 0) throw new RangeError(`${field} must be a finite positive number`);
-  }
-  if (!Number.isFinite(config.surgeThreshold) || config.surgeThreshold < 0 || config.surgeThreshold > 1) {
-    throw new RangeError('surgeThreshold must be between 0 and 1');
-  }
-  if (config.weeklyTarget > config.weeklyHardCeiling) {
-    throw new RangeError('weeklyTarget must not exceed weeklyHardCeiling');
-  }
 }

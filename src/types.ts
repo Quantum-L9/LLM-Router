@@ -17,7 +17,7 @@ export enum SonarModel {
 export enum GeneralModel {
   GPT4O_MINI = 'openai/gpt-4o-mini',
   GEMINI_FLASH = 'google/gemini-2.5-flash',
-  CLAUDE_HAIKU = 'anthropic/claude-haiku-4',
+  CLAUDE_HAIKU = 'anthropic/claude-haiku-4.5',
   GPT4O = 'openai/gpt-4o',
   CLAUDE_SONNET = 'anthropic/claude-sonnet-4',
   GEMINI_PRO = 'google/gemini-2.5-pro',

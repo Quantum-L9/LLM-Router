@@ -32,8 +32,16 @@ try {
   if (unexpected.length > 0) throw new Error(`Unexpected package files: ${unexpected.join(', ')}`);
 
   await writeFile(join(workspace, 'package.json'), JSON.stringify({ name: 'llm-router-package-smoke', private: true, type: 'module' }, null, 2));
-  const registry = process.env.NPM_CONFIG_REGISTRY ?? process.env.npm_config_registry ?? 'https://registry.npmjs.org';
-  runNpm(['install', '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false', `--registry=${registry}`, tarball], { cwd: workspace, stdio: 'inherit', env: process.env });
+  // Scoped @quantum-l9 deps publish to GitHub Packages, not the public npm registry.
+  // Keep public npm as the default registry and only rewrite the org scope.
+  const githubToken = process.env.NODE_AUTH_TOKEN || process.env.GITHUB_TOKEN || '';
+  const npmrc = [
+    'registry=https://registry.npmjs.org',
+    '@quantum-l9:registry=https://npm.pkg.github.com',
+    ...(githubToken ? [`//npm.pkg.github.com/:_authToken=${githubToken}`] : []),
+  ].join('\n');
+  await writeFile(join(workspace, '.npmrc'), `${npmrc}\n`);
+  runNpm(['install', '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false', tarball], { cwd: workspace, stdio: 'inherit', env: process.env });
   const smoke = `
     const root = await import('@quantum-l9/llm-router');
     const openrouter = await import('@quantum-l9/llm-router/openrouter');

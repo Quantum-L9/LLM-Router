@@ -11,4 +11,3 @@ on:
 jobs:
   l9_scorecard:
     uses: Quantum-L9/l9-ci-core/.github/workflows/scorecard.yml@v1
-    secrets: inherit

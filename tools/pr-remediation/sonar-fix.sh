@@ -18,11 +18,11 @@ if grep -q 'python -m pip install --upgrade pip semgrep' .github/workflows/l9-an
   sed -i "s|python -m pip install --upgrade pip semgrep|python -m pip install 'pip==26.1.2' 'semgrep==1.170.1'|" .github/workflows/l9-analysis.yml
 fi
 
-if [ "$STAGE" != "pr18" ]; then
+if [[ "$STAGE" != "pr18" ]]; then
 ########################################
 # 2. S6959: perplexity.ts reduce() initial value (all code stages)
 ########################################
-if [ -f src/providers/perplexity.ts ]; then
+if [[ -f src/providers/perplexity.ts ]]; then
   # single-line style (base stage) and multi-line style (late stages) share the same expression
   sed -i 's|best: successes\.reduce((best, candidate) => candidate\.content\.length > best\.content\.length ? candidate : best)|best: successes.reduce((best, candidate) => candidate.content.length > best.content.length ? candidate : best, successes[0])|' src/providers/perplexity.ts
   # 3. S2871: citations sort comparator (late stages only; no-op if absent)
@@ -32,7 +32,7 @@ fi
 ########################################
 # 4. S2871 control-plane (pr16 only)
 ########################################
-if [ "$STAGE" = "pr16" ]; then
+if [[ "$STAGE" = "pr16" ]]; then
   # contracts.ts:9 — deterministic code-unit comparator (behavior-preserving vs default sort for these string arrays)
   sed -i 's|const expected = \[\.\.\.new Set(serialized)\]\.sort();|const expected = [...new Set(serialized)].sort((left, right) => left < right ? -1 : left > right ? 1 : 0);|' src/control-plane/contracts.ts
   # builders.ts:52 sortedUniqueStrings
@@ -42,7 +42,7 @@ fi
 ########################################
 # 5. S4036: verify-package.mjs absolute npm invocation (stages with scripts/)
 ########################################
-if [ -f scripts/verify-package.mjs ]; then
+if [[ -f scripts/verify-package.mjs ]]; then
   python3 - << 'PYEOF'
 import re
 p = 'scripts/verify-package.mjs'
@@ -77,11 +77,11 @@ fi
 ########################################
 # 6+7. S8543/S8564: add package-lock.json where missing; switch npm install -> npm ci
 ########################################
-if [ ! -f package-lock.json ]; then
+if [[ ! -f package-lock.json ]]; then
   npm install --package-lock-only --ignore-scripts --no-audit --no-fund >/dev/null 2>&1
-  [ -f package-lock.json ] || { echo "LOCKFILE GENERATION FAILED for $BR"; exit 1; }
+  [[ -f package-lock.json ]] || { echo "LOCKFILE GENERATION FAILED for $BR"; exit 1; }
   for wf in .github/workflows/ci.yml .github/workflows/publish.yml .github/workflows/supply-chain.yml; do
-    [ -f "$wf" ] && sed -i 's|npm install --no-audit --no-fund --ignore-scripts|npm ci --ignore-scripts|' "$wf"
+    [[ -f "$wf" ]] && sed -i 's|npm install --no-audit --no-fund --ignore-scripts|npm ci --ignore-scripts|' "$wf"
   done
   # restore npm cache hint if we removed it earlier? keep simple: leave setup-node as-is.
 fi
