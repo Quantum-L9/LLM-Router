@@ -90,7 +90,7 @@ export class L9LLMRouter {
     this.idFactory = dependencies.idFactory ?? randomUUID;
     this.perplexity = dependencies.perplexityClient ?? new PerplexityClient(validated.perplexityApiKey, validated.providerTimeoutMs);
     this.memory = dependencies.memory;
-    this.openrouter = dependencies.openrouterClient ?? new OpenRouterClient(validated.openrouterApiKey, validated.appName, validated.providerTimeoutMs);
+    this.openrouter = dependencies.openrouterClient ?? new OpenRouterClient(validated.openrouterApiKey, validated.appName, validated.providerTimeoutMs, undefined, validated.openrouterBaseUrl);
   }
 
   route(input: TaskDescriptor): RoutingDecision {
@@ -244,7 +244,7 @@ export type { BudgetStore, GlobalBudgetState, ThrottleDecision, BudgetAdmissionI
 export { CircuitBreaker, CircuitOpenError } from './circuit-breaker.js';
 export { ProviderRequestError } from './provider-errors.js';
 export { TaskValidationError, RouterConfigValidationError } from './schemas.js';
-export { UnsafeImageUrlError } from './providers/openrouter.js';
+export { UnsafeImageUrlError, InvalidBaseUrlError, DEFAULT_OPENROUTER_BASE_URL, resolveOpenRouterBaseUrl } from './providers/openrouter.js';
 export { VIEWPORTS } from './vision/index.js';
 
 export { hydrateRouterPrompt } from './memory.js';
