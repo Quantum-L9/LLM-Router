@@ -26,7 +26,7 @@ for br in "${BRANCHES[@]}"; do
   git worktree add -f /tmp/wt-s4036 -b s4036-tmp "origin/$br" >/dev/null
   pushd /tmp/wt-s4036 >/dev/null
 
-  if [ ! -f scripts/verify-package.mjs ]; then
+  if [[ ! -f scripts/verify-package.mjs ]]; then
     echo "$br: no verify-package.mjs, skipping"
     popd >/dev/null; continue
   fi

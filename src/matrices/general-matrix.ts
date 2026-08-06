@@ -40,7 +40,10 @@ export function resolveGeneralConfig(task: TaskDescriptor): GeneralModelConfig {
   const selection = MAP[task.type]?.[task.complexity] ?? FAST;
   const maxTokens = task.expectedOutputTokens ?? (complexityRank(task.complexity) >= complexityRank(TaskComplexity.HIGH) ? 4096 : 2048);
   const responseFormat = [TaskType.CLASSIFICATION, TaskType.EXTRACTION, TaskType.SCORING].includes(task.type) ? 'json' : 'text';
-  return { model: selection.model, provider: Provider.OPENROUTER, temperature: responseFormat === 'json' ? 0.1 : task.type === TaskType.CONTENT_GENERATION ? 0.7 : 0.3, maxTokens, responseFormat, estimatedCostPerCall: estimateGeneralCost(selection.model, maxTokens), resolutionReason: selection.reason };
+  let temperature = 0.3;
+  if (responseFormat === 'json') temperature = 0.1;
+  else if (task.type === TaskType.CONTENT_GENERATION) temperature = 0.7;
+  return { model: selection.model, provider: Provider.OPENROUTER, temperature, maxTokens, responseFormat, estimatedCostPerCall: estimateGeneralCost(selection.model, maxTokens), resolutionReason: selection.reason };
 }
 
 export function getFallbackChain(model: GeneralModel): GeneralModel[] { return [...(FALLBACKS[model] ?? [GeneralModel.GPT4O_MINI])]; }

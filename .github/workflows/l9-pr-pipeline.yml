@@ -1,4 +1,6 @@
-# Quantum-L9 org starter — Full PR validation pipeline (lint, type-check, tests, security). Calls l9-ci-core kernel; do not add logic here.
+# Quantum-L9 — PR validate with GitHub Packages auth.
+# l9-ci-core pr-pipeline@v1 omits registry-url/NODE_AUTH_TOKEN; private
+# @quantum-l9/* deps then 401. Mirror CI job auth (ci.yml).
 name: "L9 PR Pipeline"
 on:
   pull_request:
@@ -6,11 +8,24 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   l9_pr_pipeline:
-    uses: Quantum-L9/l9-ci-core/.github/workflows/pr-pipeline.yml@v1
-    secrets: inherit
-    with:
-      python-version: "3.12"
-      run-security: true
-      working-directory: "."
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20.19.0"
+          cache: npm
+          registry-url: https://npm.pkg.github.com
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run verify:types
+      - run: npm test

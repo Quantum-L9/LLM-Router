@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { BudgetReservationError, BudgetTracker } from './budget/index.js';
+import type { RouterMemoryConfig } from './memory.js';
+import { hydrateRouterPrompt } from './memory.js';
+import {
+  BudgetReservationError,
+  BudgetTracker,
+  InMemoryBudgetStore,
+  type BudgetStore,
+} from './budget/index.js';
 import { CircuitBreaker, CircuitOpenError, type CircuitPermit } from './circuit-breaker.js';
 import { resolveGeneralConfig, getFallbackChain } from './matrices/general-matrix.js';
 import { isSearchTask, resolvePerplexityConfig } from './matrices/perplexity-matrix.js';
@@ -28,6 +35,8 @@ export interface RouterDependencies {
   idFactory?: () => string;
   openrouterClient?: OpenRouterClientLike;
   perplexityClient?: PerplexityClientLike;
+  budgetStore?: BudgetStore;
+  memory?: RouterMemoryConfig;
 }
 
 export function resolveRoute(task: TaskDescriptor): RoutingResolution {
@@ -49,27 +58,38 @@ export function getDowngradedModel(
   maxTier: 'fast' | 'strategic' | 'critical',
 ): GeneralModel | SonarModel {
   if (maxTier === 'critical') return original;
-  if (provider === Provider.PERPLEXITY) return maxTier === 'fast' ? SonarModel.SONAR : original === SonarModel.SONAR_DEEP_RESEARCH ? SonarModel.SONAR_REASONING_PRO : original;
+  if (provider === Provider.PERPLEXITY) {
+    if (maxTier === 'fast') return SonarModel.SONAR;
+    return original === SonarModel.SONAR_DEEP_RESEARCH ? SonarModel.SONAR_REASONING_PRO : original;
+  }
   if (maxTier === 'fast') return GeneralModel.GPT4O_MINI;
   return [GeneralModel.CLAUDE_OPUS, GeneralModel.O1, GeneralModel.O3].includes(original as GeneralModel) ? GeneralModel.CLAUDE_SONNET : original;
 }
 
 export class L9LLMRouter {
-  private readonly budget: BudgetTracker;
+  private readonly budgetStore: BudgetStore;
+  private readonly localBudgetTracker?: BudgetTracker;
   private readonly circuitBreaker: CircuitBreaker;
   private readonly perplexity: PerplexityClientLike;
   private readonly openrouter: OpenRouterClientLike;
   private readonly clock: () => Date;
   private readonly idFactory: () => string;
   private readonly callLog: RoutingDecision[] = [];
+  private readonly memory?: RouterMemoryConfig;
 
   constructor(config: RouterConfig, dependencies: RouterDependencies = {}) {
     const validated = parseRouterConfig(config);
-    this.budget = new BudgetTracker(validated.budget);
+    if (dependencies.budgetStore) {
+      this.budgetStore = dependencies.budgetStore;
+    } else {
+      this.localBudgetTracker = new BudgetTracker(validated.budget);
+      this.budgetStore = new InMemoryBudgetStore(this.localBudgetTracker);
+    }
     this.circuitBreaker = new CircuitBreaker(validated.circuitBreaker);
     this.clock = dependencies.clock ?? (() => new Date());
     this.idFactory = dependencies.idFactory ?? randomUUID;
     this.perplexity = dependencies.perplexityClient ?? new PerplexityClient(validated.perplexityApiKey, validated.providerTimeoutMs);
+    this.memory = dependencies.memory;
     this.openrouter = dependencies.openrouterClient ?? new OpenRouterClient(validated.openrouterApiKey, validated.appName, validated.providerTimeoutMs);
   }
 
@@ -86,17 +106,18 @@ export class L9LLMRouter {
     options?: { images?: string[]; assistantContext?: string; consensus?: boolean; signal?: AbortSignal },
   ): Promise<LLMResponse> {
     const parsedTask = parseExecutableTaskDescriptor(input);
-    const task = options?.images === undefined
-      ? parsedTask
-      : parseExecutableTaskDescriptor({ ...parsedTask, images: options.images });
+    const task = options?.images === undefined ? parsedTask : parseExecutableTaskDescriptor({ ...parsedTask, images: options.images });
     const images = task.images;
     if (images) for (const image of images) validateImageUrl(image);
     const decision = this.route(task);
+    const governedMemory = await hydrateRouterPrompt(this.memory, decision.clientId, task.type, userPrompt);
+    const effectiveSystemPrompt = governedMemory ? `${systemPrompt}${governedMemory}` : systemPrompt;
 
     let reservationId: string | undefined;
     let permit: CircuitPermit | undefined;
+    let providerCompleted = false;
     try {
-      const { decision: throttle, reservation } = this.budget.reserveTask(task.clientId, task, decision.estimatedCost, this.clock(), this.idFactory);
+      const { decision: throttle, reservation } = await this.budgetStore.reserveTask(task.clientId, task, decision.estimatedCost, this.clock(), this.idFactory);
       reservationId = reservation.id;
       if (throttle.forceDowngrade) {
         decision.downgraded = true;
@@ -105,64 +126,94 @@ export class L9LLMRouter {
       }
 
       permit = this.circuitBreaker.acquire(decision.provider, this.clock());
-      let response: LLMResponse;
-      if (decision.provider === Provider.PERPLEXITY) {
-        const config = resolvePerplexityConfig(task);
-        if (!Object.values(SonarModel).includes(decision.model as SonarModel)) throw new Error('Perplexity route resolved a non-Sonar model');
-        config.model = decision.model as SonarModel;
-        if (options?.consensus && config.variations > 1) {
-          const consensus = await this.perplexity.completeWithConsensus(config, systemPrompt, userPrompt, options.assistantContext, options.signal);
-          response = {
-            ...consensus.best,
-            inputTokens: consensus.aggregate.inputTokens,
-            outputTokens: consensus.aggregate.outputTokens,
-            totalTokens: consensus.aggregate.totalTokens,
-            cost: consensus.aggregate.cost,
-            latencyMs: consensus.aggregate.latencyMs,
-            citations: consensus.aggregate.citations,
-          };
-        } else {
-          response = await this.perplexity.complete(config, systemPrompt, userPrompt, options?.assistantContext, options?.signal);
-        }
-      } else if (VISION_TASKS.has(task.type) && images?.length) {
-        const config = resolveVisionConfig(task.type as TaskType.VISUAL_QA | TaskType.SCREENSHOT_ANALYSIS | TaskType.LAYOUT_VALIDATION, task.complexity, images.length);
-        config.model = decision.model as GeneralModel;
-        response = await this.openrouter.completeWithVision(config, systemPrompt, userPrompt, images, options?.signal);
-      } else {
-        const config = resolveGeneralConfig(task);
-        config.model = decision.model as GeneralModel;
-        response = await this.openrouter.completeWithFallback(config, getFallbackChain(config.model), systemPrompt, userPrompt, options?.signal);
-      }
+      const response = await this.dispatchProvider(task, decision, effectiveSystemPrompt, userPrompt, images, options);
 
+      providerCompleted = true;
       this.circuitBreaker.recordSuccess(permit);
-      this.budget.reconcile(reservationId, response.cost);
+      await this.budgetStore.reconcile(reservationId, response.cost);
       reservationId = undefined;
       decision.actualCost = response.cost;
       decision.latencyMs = response.latencyMs;
       this.callLog.push(decision);
       return response;
     } catch (error) {
-      if (reservationId) this.budget.release(reservationId);
+      // Before provider completion, release an unbilled reservation. After a
+      // provider response, retain it if reconciliation fails so durable budget
+      // state remains fail-closed and can be repaired instead of forgetting cost.
+      if (reservationId && !providerCompleted) await this.budgetStore.release(reservationId);
       if (permit) {
         if (isCircuitFailure(error, decision.provider)) this.circuitBreaker.recordFailure(permit, this.clock());
         else this.circuitBreaker.release(permit, this.clock());
       }
-      if (error instanceof BudgetReservationError) throw new BudgetExhaustedError(error.message, task, decision, error);
-      if (error instanceof CircuitOpenError) throw error;
-      if (error instanceof Error && ['TaskValidationError', 'UnsafeImageUrlError'].includes(error.name)) throw error;
-      throw classifyProviderError(error, decision.provider);
+      if (providerCompleted) throw error;
+      throw this.toExecutionError(error, task, decision);
     }
   }
 
-  initClient(clientId: string, overrides?: Partial<BudgetConfig>): void { this.budget.initClient(clientId, overrides); }
-  resetDaily(clientId: string): void { this.budget.resetDaily(clientId); }
-  resetWeekly(clientId: string): void { this.budget.resetWeekly(clientId); }
-  resetMonthly(clientId: string): void { this.budget.resetMonthly(clientId); }
-  resetGlobalMonthly(): void { this.budget.resetGlobalMonthly(); }
-  checkSurge(clientId: string, dayOfWeek: number = this.clock().getDay()): boolean { return this.budget.checkSurgeAllowance(clientId, dayOfWeek); }
-  getClientBudgetReport(clientId: string) { return this.budget.getClientBudgetReport(clientId); }
-  getAllBudgetReports() { return this.budget.getAllBudgetReports(); }
-  getGlobalSpend() { return this.budget.getGlobalSpend(); }
+  private dispatchProvider(
+    task: TaskDescriptor,
+    decision: RoutingDecision,
+    effectiveSystemPrompt: string,
+    userPrompt: string,
+    images: string[] | undefined,
+    options: { images?: string[]; assistantContext?: string; consensus?: boolean; signal?: AbortSignal } | undefined,
+  ): Promise<LLMResponse> {
+    if (decision.provider === Provider.PERPLEXITY) {
+      const config = resolvePerplexityConfig(task);
+      if (!Object.values(SonarModel).includes(decision.model as SonarModel)) throw new Error('Perplexity route resolved a non-Sonar model');
+      config.model = decision.model as SonarModel;
+      if (options?.consensus && config.variations > 1) {
+        return this.perplexity.completeWithConsensus(config, effectiveSystemPrompt, userPrompt, options.assistantContext, options.signal).then(consensus => ({
+          ...consensus.best,
+          inputTokens: consensus.aggregate.inputTokens,
+          outputTokens: consensus.aggregate.outputTokens,
+          totalTokens: consensus.aggregate.totalTokens,
+          cost: consensus.aggregate.cost,
+          latencyMs: consensus.aggregate.latencyMs,
+          citations: consensus.aggregate.citations,
+        }));
+      }
+      return this.perplexity.complete(config, effectiveSystemPrompt, userPrompt, options?.assistantContext, options?.signal);
+    }
+    if (VISION_TASKS.has(task.type) && images?.length) {
+      const config = resolveVisionConfig(task.type as TaskType.VISUAL_QA | TaskType.SCREENSHOT_ANALYSIS | TaskType.LAYOUT_VALIDATION, task.complexity, images.length);
+      config.model = decision.model as GeneralModel;
+      return this.openrouter.completeWithVision(config, effectiveSystemPrompt, userPrompt, images, options?.signal);
+    }
+    const config = resolveGeneralConfig(task);
+    config.model = decision.model as GeneralModel;
+    return this.openrouter.completeWithFallback(config, getFallbackChain(config.model), effectiveSystemPrompt, userPrompt, options?.signal);
+  }
+
+  private toExecutionError(error: unknown, task: TaskDescriptor, decision: RoutingDecision): Error {
+    if (error instanceof BudgetReservationError) return new BudgetExhaustedError(error.message, task, decision, error);
+    if (error instanceof CircuitOpenError) return error;
+    if (error instanceof Error && ['TaskValidationError', 'UnsafeImageUrlError'].includes(error.name)) return error;
+    return classifyProviderError(error, decision.provider);
+  }
+
+  initClient(clientId: string, overrides?: Partial<BudgetConfig>): Promise<void> { return this.budgetStore.initClient(clientId, overrides); }
+  resetDaily(clientId: string): Promise<void> { return this.budgetStore.resetDaily(clientId); }
+  resetWeekly(clientId: string): Promise<void> { return this.budgetStore.resetWeekly(clientId); }
+  resetMonthly(clientId: string): Promise<void> { return this.budgetStore.resetMonthly(clientId); }
+  resetGlobalMonthly(): Promise<void> { return this.budgetStore.resetGlobalMonthly(); }
+  checkSurge(clientId: string, dayOfWeek: number = this.clock().getDay()): Promise<boolean> { return this.budgetStore.checkSurgeAllowance(clientId, dayOfWeek); }
+
+  getClientBudgetReport(clientId: string) {
+    if (!this.localBudgetTracker) throw new Error('Synchronous budget reports are unavailable with an external BudgetStore; use getClientBudgetReportAsync()');
+    return this.localBudgetTracker.getClientBudgetReport(clientId);
+  }
+  getAllBudgetReports() {
+    if (!this.localBudgetTracker) throw new Error('Synchronous budget reports are unavailable with an external BudgetStore; use getAllBudgetReportsAsync()');
+    return this.localBudgetTracker.getAllBudgetReports();
+  }
+  getGlobalSpend() {
+    if (!this.localBudgetTracker) throw new Error('Synchronous budget reports are unavailable with an external BudgetStore; use getGlobalSpendAsync()');
+    return this.localBudgetTracker.getGlobalSpend();
+  }
+  getClientBudgetReportAsync(clientId: string) { return this.budgetStore.getClientBudgetReport(clientId); }
+  getAllBudgetReportsAsync() { return this.budgetStore.getAllBudgetReports(); }
+  getGlobalSpendAsync() { return this.budgetStore.getGlobalSpend(); }
   getCircuitState(provider: Provider) { return this.circuitBreaker.getState(provider); }
   getCallLog(limit = 100): RoutingDecision[] { return this.callLog.slice(-limit).map(entry => ({ ...entry })); }
   getCallLogByClient(clientId: string, limit = 50): RoutingDecision[] { return this.callLog.filter(entry => entry.clientId === clientId).slice(-limit).map(entry => ({ ...entry })); }
@@ -180,9 +231,21 @@ export class BudgetExhaustedError extends Error {
 }
 
 export * from './types.js';
-export { BudgetTracker, BudgetReservationError, ThrottleLevel } from './budget/index.js';
+export {
+  DEFAULT_BUDGET_CONFIG,
+  BudgetTracker,
+  BudgetReservationError,
+  InMemoryBudgetStore,
+  ThrottleLevel,
+  evaluateBudgetAdmission,
+  validateBudgetConfig,
+} from './budget/index.js';
+export type { BudgetStore, GlobalBudgetState, ThrottleDecision, BudgetAdmissionInput } from './budget/index.js';
 export { CircuitBreaker, CircuitOpenError } from './circuit-breaker.js';
 export { ProviderRequestError } from './provider-errors.js';
 export { TaskValidationError, RouterConfigValidationError } from './schemas.js';
 export { UnsafeImageUrlError } from './providers/openrouter.js';
 export { VIEWPORTS } from './vision/index.js';
+
+export { hydrateRouterPrompt } from './memory.js';
+export type { RouterMemoryConfig } from './memory.js';

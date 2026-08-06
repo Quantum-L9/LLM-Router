@@ -9,6 +9,42 @@ function isPlainObject(value: object): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
+/**
+ * Deterministic UTF-16 code-unit ordering — the canonical comparator used across
+ * the control plane. Locale-aware comparison must never be used for canonical
+ * ordering because it would make hashes non-reproducible across environments.
+ */
+export function compareCodeUnits(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function normalizeArray(value: unknown[], stack: Set<object>, path: string): unknown[] {
+  for (let index = 0; index < value.length; index += 1) if (!(index in value)) throw new CanonicalJsonError(`${path}[${index}]: sparse arrays are forbidden`);
+  return value.map((entry, index) => normalize(entry, stack, `${path}[${index}]`));
+}
+
+function normalizeObject(value: object, stack: Set<object>, path: string): Record<string, unknown> {
+  if (!isPlainObject(value)) throw new CanonicalJsonError(`${path}: only plain objects are canonicalizable`);
+  if (Object.getOwnPropertySymbols(value).length > 0) throw new CanonicalJsonError(`${path}: symbol properties are forbidden`);
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const normalizedEntries = Object.keys(descriptors).map(key => {
+    const descriptor = descriptors[key];
+    if (!descriptor.enumerable || descriptor.get || descriptor.set) throw new CanonicalJsonError(`${path}.${key}: accessors and non-enumerable properties are forbidden`);
+    return { originalKey: key, key: key.normalize('NFC'), value: descriptor.value };
+  });
+  const seen = new Set<string>();
+  for (const entry of normalizedEntries) {
+    if (seen.has(entry.key)) throw new CanonicalJsonError(`${path}: Unicode-normalized duplicate key "${entry.key}"`);
+    seen.add(entry.key);
+  }
+  normalizedEntries.sort((left, right) => compareCodeUnits(left.key, right.key));
+  const result: Record<string, unknown> = {};
+  for (const entry of normalizedEntries) result[entry.key] = normalize(entry.value, stack, `${path}.${entry.originalKey}`);
+  return result;
+}
+
 function normalize(value: unknown, stack: Set<object>, path: string): unknown {
   if (value === null || typeof value === 'boolean' || typeof value === 'string') {
     return typeof value === 'string' ? value.normalize('NFC') : value;
@@ -22,27 +58,7 @@ function normalize(value: unknown, stack: Set<object>, path: string): unknown {
   if (stack.has(value)) throw new CanonicalJsonError(`${path}: cyclic value`);
   stack.add(value);
   try {
-    if (Array.isArray(value)) {
-      for (let index = 0; index < value.length; index += 1) if (!(index in value)) throw new CanonicalJsonError(`${path}[${index}]: sparse arrays are forbidden`);
-      return value.map((entry, index) => normalize(entry, stack, `${path}[${index}]`));
-    }
-    if (!isPlainObject(value)) throw new CanonicalJsonError(`${path}: only plain objects are canonicalizable`);
-    if (Object.getOwnPropertySymbols(value).length > 0) throw new CanonicalJsonError(`${path}: symbol properties are forbidden`);
-    const descriptors = Object.getOwnPropertyDescriptors(value);
-    const normalizedEntries = Object.keys(descriptors).map(key => {
-      const descriptor = descriptors[key];
-      if (!descriptor.enumerable || descriptor.get || descriptor.set) throw new CanonicalJsonError(`${path}.${key}: accessors and non-enumerable properties are forbidden`);
-      return { originalKey: key, key: key.normalize('NFC'), value: descriptor.value };
-    });
-    const seen = new Set<string>();
-    for (const entry of normalizedEntries) {
-      if (seen.has(entry.key)) throw new CanonicalJsonError(`${path}: Unicode-normalized duplicate key "${entry.key}"`);
-      seen.add(entry.key);
-    }
-    normalizedEntries.sort((left, right) => left.key < right.key ? -1 : left.key > right.key ? 1 : 0);
-    const result: Record<string, unknown> = {};
-    for (const entry of normalizedEntries) result[entry.key] = normalize(entry.value, stack, `${path}.${entry.originalKey}`);
-    return result;
+    return Array.isArray(value) ? normalizeArray(value, stack, path) : normalizeObject(value, stack, path);
   } finally {
     stack.delete(value);
   }
