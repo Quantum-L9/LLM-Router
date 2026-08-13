@@ -109,7 +109,7 @@ export class InvalidBaseUrlError extends Error {
  * predictable. The default is returned untouched, keeping existing
  * deployments byte-for-byte identical in behavior.
  */
-export function resolveOpenRouterBaseUrl(configured?: string, env: NodeJS.ProcessEnv = process.env): string {
+export function resolveOpenRouterBaseUrl(configured?: string, env: Record<string, string | undefined> = process.env): string {
   const candidate = configured !== undefined
     ? { value: configured, source: 'config' as const }
     : env.OPENROUTER_BASE_URL !== undefined && env.OPENROUTER_BASE_URL.trim() !== ''
