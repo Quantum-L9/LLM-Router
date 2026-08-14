@@ -6,7 +6,7 @@ import {
 } from '../src/providers/openrouter.js';
 import { parseRouterConfig, RouterConfigValidationError } from '../src/schemas.js';
 
-const emptyEnv: NodeJS.ProcessEnv = {};
+const emptyEnv: Record<string, string | undefined> = {};
 
 describe('resolveOpenRouterBaseUrl', () => {
   it('returns the OpenRouter cloud default when nothing is configured', () => {
@@ -19,17 +19,17 @@ describe('resolveOpenRouterBaseUrl', () => {
   });
 
   it('falls back to OPENROUTER_BASE_URL from the environment', () => {
-    const env: NodeJS.ProcessEnv = { OPENROUTER_BASE_URL: 'https://proxy.internal.example/v1' };
+    const env: Record<string, string | undefined> = { OPENROUTER_BASE_URL: 'https://proxy.internal.example/v1' };
     expect(resolveOpenRouterBaseUrl(undefined, env)).toBe('https://proxy.internal.example/v1');
   });
 
   it('gives explicit config precedence over the environment variable', () => {
-    const env: NodeJS.ProcessEnv = { OPENROUTER_BASE_URL: 'https://env.example.com/v1' };
+    const env: Record<string, string | undefined> = { OPENROUTER_BASE_URL: 'https://env.example.com/v1' };
     expect(resolveOpenRouterBaseUrl('https://config.example.com/v1', env)).toBe('https://config.example.com/v1');
   });
 
   it('ignores a blank environment variable and returns the default', () => {
-    const env: NodeJS.ProcessEnv = { OPENROUTER_BASE_URL: '   ' };
+    const env: Record<string, string | undefined> = { OPENROUTER_BASE_URL: '   ' };
     expect(resolveOpenRouterBaseUrl(undefined, env)).toBe(DEFAULT_OPENROUTER_BASE_URL);
   });
 
@@ -52,7 +52,7 @@ describe('resolveOpenRouterBaseUrl', () => {
   });
 
   it('rejects an env value with a non-http protocol and attributes it to env', () => {
-    const env: NodeJS.ProcessEnv = { OPENROUTER_BASE_URL: 'ftp://example.com/v1' };
+    const env: Record<string, string | undefined> = { OPENROUTER_BASE_URL: 'ftp://example.com/v1' };
     expect(() => resolveOpenRouterBaseUrl(undefined, env)).toThrowError(InvalidBaseUrlError);
     try {
       resolveOpenRouterBaseUrl(undefined, env);
