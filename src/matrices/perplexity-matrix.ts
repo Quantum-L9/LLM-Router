@@ -10,9 +10,11 @@ import {
   type PerplexityConfig,
   type TaskDescriptor,
 } from '../types.js';
+import { isSearchTask } from './search-policy.js';
 
-const SEARCH_TASKS = new Set<TaskType>([TaskType.COMPETITOR_RESEARCH, TaskType.CITATION_CHECK, TaskType.FACT_VERIFICATION, TaskType.MARKET_RESEARCH, TaskType.LINK_PROSPECTING]);
-export function isSearchTask(type: TaskType): boolean { return SEARCH_TASKS.has(type); }
+// Re-exported for backward compatibility: `isSearchTask` historically lived in
+// this module. Its canonical home is now ./search-policy.ts.
+export { isSearchTask };
 
 function selectSonarModel(complexity: TaskComplexity, rank: number): SonarModel {
   if (complexity === TaskComplexity.CRITICAL) return SonarModel.SONAR_DEEP_RESEARCH;

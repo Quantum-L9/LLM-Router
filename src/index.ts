@@ -9,7 +9,8 @@ import {
 } from './budget/index.js';
 import { CircuitBreaker, CircuitOpenError, type CircuitPermit } from './circuit-breaker.js';
 import { resolveGeneralConfig, getFallbackChain } from './matrices/general-matrix.js';
-import { isSearchTask, resolvePerplexityConfig } from './matrices/perplexity-matrix.js';
+import { resolvePerplexityConfig } from './matrices/perplexity-matrix.js';
+import { requiresSearchProvider } from './matrices/search-policy.js';
 import { classifyProviderError, isCircuitFailure } from './provider-errors.js';
 import { OpenRouterClient, validateImageUrl, type OpenRouterClientLike } from './providers/openrouter.js';
 import { PerplexityClient, type PerplexityClientLike } from './providers/perplexity.js';
@@ -40,7 +41,7 @@ export interface RouterDependencies {
 }
 
 export function resolveRoute(task: TaskDescriptor): RoutingResolution {
-  if (isSearchTask(task.type)) {
+  if (requiresSearchProvider(task)) {
     const config = resolvePerplexityConfig(task);
     return { taskType: task.type, complexity: task.complexity, provider: Provider.PERPLEXITY, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason };
   }
@@ -246,6 +247,7 @@ export { ProviderRequestError } from './provider-errors.js';
 export { TaskValidationError, RouterConfigValidationError } from './schemas.js';
 export { UnsafeImageUrlError, InvalidBaseUrlError, DEFAULT_OPENROUTER_BASE_URL, resolveOpenRouterBaseUrl } from './providers/openrouter.js';
 export { VIEWPORTS } from './vision/index.js';
+export { isSearchTask, requiresSearchProvider } from './matrices/search-policy.js';
 
 export { hydrateRouterPrompt } from './memory.js';
 export type { RouterMemoryConfig } from './memory.js';
