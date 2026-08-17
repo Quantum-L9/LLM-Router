@@ -10,11 +10,11 @@ import {
   type PerplexityConfig,
   type TaskDescriptor,
 } from '../types.js';
-import { isSearchTask } from './search-policy.js';
-
 // Re-exported for backward compatibility: `isSearchTask` historically lived in
-// this module. Its canonical home is now ./search-policy.ts.
-export { isSearchTask };
+// this module. Its canonical home is now ./search-policy.ts, and nothing here
+// calls it any more — the search decision is made before a Perplexity config
+// is ever resolved.
+export { isSearchTask } from './search-policy.js';
 
 function selectSonarModel(complexity: TaskComplexity, rank: number): SonarModel {
   if (complexity === TaskComplexity.CRITICAL) return SonarModel.SONAR_DEEP_RESEARCH;
