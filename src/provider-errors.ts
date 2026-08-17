@@ -4,6 +4,7 @@ const LOCAL_ERROR_NAMES = new Set([
   'TaskValidationError',
   'RouterConfigValidationError',
   'UnsafeImageUrlError',
+  'UnsupportedCapabilityCombinationError',
   'BudgetExhaustedError',
   'CircuitOpenError',
   'AbortError',

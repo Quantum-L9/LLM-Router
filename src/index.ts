@@ -10,7 +10,7 @@ import {
 import { CircuitBreaker, CircuitOpenError, type CircuitPermit } from './circuit-breaker.js';
 import { resolveGeneralConfig, getFallbackChain } from './matrices/general-matrix.js';
 import { resolvePerplexityConfig } from './matrices/perplexity-matrix.js';
-import { requiresSearchProvider } from './matrices/search-policy.js';
+import { assertSearchVisionCompatible, requiresSearchProvider } from './matrices/search-policy.js';
 import { classifyProviderError, isCircuitFailure } from './provider-errors.js';
 import { OpenRouterClient, validateImageUrl, type OpenRouterClientLike } from './providers/openrouter.js';
 import { PerplexityClient, type PerplexityClientLike } from './providers/perplexity.js';
@@ -25,6 +25,7 @@ import {
   type RouterConfig,
   type RoutingDecision,
   type RoutingResolution,
+  type SearchPolicySource,
   type TaskDescriptor,
 } from './types.js';
 import { generateFullSiteQAPlan, resolveVisionConfig, VIEWPORTS, type FullSiteQAConfig, type VisualQATask } from './vision/index.js';
@@ -41,16 +42,19 @@ export interface RouterDependencies {
 }
 
 export function resolveRoute(task: TaskDescriptor): RoutingResolution {
-  if (requiresSearchProvider(task)) {
+  const searchRequired = requiresSearchProvider(task);
+  const searchPolicySource: SearchPolicySource = typeof task.requiresSearch === 'boolean' ? 'EXPLICIT' : 'TASK_DEFAULT';
+  assertSearchVisionCompatible(task, searchRequired);
+  if (searchRequired) {
     const config = resolvePerplexityConfig(task);
-    return { taskType: task.type, complexity: task.complexity, provider: Provider.PERPLEXITY, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason };
+    return { taskType: task.type, complexity: task.complexity, provider: Provider.PERPLEXITY, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason, searchRequired, searchPolicySource };
   }
   if (VISION_TASKS.has(task.type)) {
     const config = resolveVisionConfig(task.type as TaskType.VISUAL_QA | TaskType.SCREENSHOT_ANALYSIS | TaskType.LAYOUT_VALIDATION, task.complexity, task.images?.length ?? 1);
-    return { taskType: task.type, complexity: task.complexity, provider: Provider.OPENROUTER, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason };
+    return { taskType: task.type, complexity: task.complexity, provider: Provider.OPENROUTER, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason, searchRequired: false, searchPolicySource };
   }
   const config = resolveGeneralConfig(task);
-  return { taskType: task.type, complexity: task.complexity, provider: Provider.OPENROUTER, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason };
+  return { taskType: task.type, complexity: task.complexity, provider: Provider.OPENROUTER, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason, searchRequired: false, searchPolicySource };
 }
 
 export function getDowngradedModel(
@@ -247,7 +251,7 @@ export { ProviderRequestError } from './provider-errors.js';
 export { TaskValidationError, RouterConfigValidationError } from './schemas.js';
 export { UnsafeImageUrlError, InvalidBaseUrlError, DEFAULT_OPENROUTER_BASE_URL, resolveOpenRouterBaseUrl } from './providers/openrouter.js';
 export { VIEWPORTS } from './vision/index.js';
-export { isSearchTask, requiresSearchProvider } from './matrices/search-policy.js';
+export { isSearchTask, requiresSearchProvider, UnsupportedCapabilityCombinationError, assertSearchVisionCompatible } from './matrices/search-policy.js';
 
 export { hydrateRouterPrompt } from './memory.js';
 export type { RouterMemoryConfig } from './memory.js';

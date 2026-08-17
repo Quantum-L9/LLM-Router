@@ -48,3 +48,33 @@ export function requiresSearchProvider(task: TaskDescriptor): boolean {
   }
   return isSearchTask(task.type);
 }
+
+/**
+ * Fail-closed guard for capability combinations no current provider supports.
+ *
+ * The Perplexity client is text-only, so a search-required route cannot consume
+ * images. Rather than silently dropping either requested capability (dropping
+ * the images, or routing vision while pretending search happened), resolution
+ * refuses the combination until a multimodal-search provider contract exists.
+ */
+export class UnsupportedCapabilityCombinationError extends Error {
+  public readonly code = 'SEARCH_VISION_COMBINATION_UNSUPPORTED' as const;
+  constructor(public readonly taskType: TaskType, public readonly capabilities: readonly string[]) {
+    super(`Task type "${taskType}" requires an unsupported capability combination: ${capabilities.join(' + ')}`);
+    this.name = 'UnsupportedCapabilityCombinationError';
+  }
+  toJSON(): Record<string, unknown> {
+    return { name: this.name, code: this.code, taskType: this.taskType, capabilities: this.capabilities, message: this.message };
+  }
+}
+
+/**
+ * Throws {@link UnsupportedCapabilityCombinationError} when a search-required
+ * route would also have to consume images. No silent capability loss: neither
+ * the images nor the search request is dropped behind the caller's back.
+ */
+export function assertSearchVisionCompatible(task: TaskDescriptor, searchRequired: boolean): void {
+  if (searchRequired && (task.images?.length ?? 0) > 0) {
+    throw new UnsupportedCapabilityCombinationError(task.type, ['search', 'vision']);
+  }
+}

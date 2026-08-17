@@ -57,7 +57,11 @@ export function resolvePerplexityConfig(task: TaskDescriptor): PerplexityConfig 
     domainFilter: task.domainFilter ?? [],
     variations,
     reasoningEffort: selectReasoningEffort(model, task.complexity),
-    disableSearch: task.requiresSearch === false && !isSearchTask(task.type),
+    // A Perplexity route is only selected when requiresSearchProvider(task) is
+    // true (search required by explicit flag or TaskType default), so a resolved
+    // router config never disables search. The field stays on the config
+    // contract for direct-provider callers; the router always sets false.
+    disableSearch: false,
     estimatedCostPerCall,
     resolutionReason: `Task[${task.type}] complexity[${task.complexity}] uses ${model}`,
   };

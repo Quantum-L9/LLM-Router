@@ -183,6 +183,8 @@ export interface RouterConfig {
   providerMaxRetries?: 0;
 }
 
+export type SearchPolicySource = 'EXPLICIT' | 'TASK_DEFAULT';
+
 export interface RoutingResolution {
   taskType: TaskType;
   complexity: TaskComplexity;
@@ -190,6 +192,10 @@ export interface RoutingResolution {
   model: GeneralModel | SonarModel;
   estimatedCost: number;
   reason: string;
+  /** Whether the resolved route carries web-search capability (explicit flag or task-type default). */
+  searchRequired: boolean;
+  /** Where `searchRequired` came from: an explicit `TaskDescriptor.requiresSearch` boolean, or the legacy per-TaskType default. */
+  searchPolicySource: SearchPolicySource;
 }
 
 export interface RoutingDecision extends RoutingResolution {
