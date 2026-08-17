@@ -82,6 +82,53 @@ const router = new L9LLMRouter({
 
 Resolution precedence is explicit config, then `OPENROUTER_BASE_URL`, then the OpenRouter cloud default. Overrides are validated as absolute http(s) URLs at construction time and trailing slashes are normalized. Invalid values throw `InvalidBaseUrlError` (or `RouterConfigValidationError` at config parse time). Deployments that set neither are unaffected.
 
+## Search policy
+
+An application declares *what capability the task needs*. The router decides *which provider and model* serve it. `TaskDescriptor.requiresSearch` is the capability declaration, and when it is present it is authoritative:
+
+```ts
+shouldSearch(task) =
+  typeof task.requiresSearch === 'boolean'
+    ? task.requiresSearch
+    : isSearchTask(task.type);
+```
+
+| `requiresSearch` | Result | `searchPolicySource` |
+| --- | --- | --- |
+| `true` | Search plane (Perplexity Sonar) | `EXPLICIT` |
+| `false` | General plane, even for a research `TaskType` | `EXPLICIT` |
+| omitted | The historical `TaskType` default | `TASK_DEFAULT` |
+
+The `TaskType` default is unchanged: `COMPETITOR_RESEARCH`, `CITATION_CHECK`, `FACT_VERIFICATION`, `MARKET_RESEARCH`, and `LINK_PROSPECTING` still route to search when the flag is omitted. Explicit `false` lets a caller reason strategically over evidence a deterministic system already gathered without paying for redundant web search; explicit `true` lets an otherwise-general task reach fresh web context.
+
+```ts
+// Strategic synthesis over evidence we already hold — no web search.
+await router.execute(
+  { clientId: 'tenant-a', type: TaskType.COMPETITOR_RESEARCH, complexity: TaskComplexity.HIGH, requiresSearch: false },
+  'You are a strategist.',
+  'Synthesize the supplied competitor evidence.',
+);
+```
+
+`TaskDescriptor` carries no `provider`, `model`, or fallback-chain field, and unknown keys are stripped during validation. Applications cannot select a provider or model.
+
+### Auditing a routing decision
+
+Every `RoutingDecision` — from `route()` and from `getCallLog()` — reports whether search was selected and on whose authority, alongside `taskType`, `complexity`, `provider`, `model`, `reason`, `estimatedCost`, `taskId`, `clientId`, `timestamp`, downgrade state, and (after execution) `actualCost` and `latencyMs`. No credentials or prompts are recorded.
+
+```ts
+const decision = router.route({ clientId: 'tenant-a', type: TaskType.MARKET_RESEARCH, complexity: TaskComplexity.HIGH, requiresSearch: false });
+decision.searchRequired;      // false
+decision.searchPolicySource;  // SearchPolicySource.EXPLICIT
+decision.provider;            // Provider.OPENROUTER
+```
+
+`searchRequired` always agrees with the plane actually dispatched; the router asserts this in both directions before any provider call.
+
+### Unsupported capability combinations
+
+No provider in this router serves search and vision together. A visual task that supplies images *and* sets `requiresSearch: true` is refused with `UnsupportedCapabilityCombinationError` (code `UNSUPPORTED_CAPABILITY_COMBINATION`) before any budget reservation, circuit permit, or provider dispatch — rather than silently dropping the images or silently skipping the search. Split such work into a vision task and a search task.
+
 ## Vision execution
 
 Images supplied through execution options are merged into the validated task before routing. This ensures model selection and budget estimation use the same image count that reaches the provider.
@@ -109,6 +156,8 @@ Only HTTPS public URLs and bounded `data:image/*;base64` payloads are accepted. 
 ## Search consensus
 
 For eligible high-complexity Perplexity tasks, `{ consensus: true }` executes the configured variations in parallel. The returned content is selected from the successful responses, while token and cost fields represent the aggregate successful consensus execution so budget reconciliation does not undercount spend.
+
+Consensus is an execution modifier, not search-policy authority. It applies only to a route that already resolved to the search plane; on a general or vision route it is inert and never pulls the task onto a search provider.
 
 ## Budget semantics
 
