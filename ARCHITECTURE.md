@@ -7,7 +7,8 @@
 ```text
 validated execution task
   -> effective image set merged into task
-  -> pure route resolution
+  -> capability resolution + fail-closed validation
+  -> pure route resolution (single decision)
   -> request identity and timestamp
   -> atomic process-local budget reservation
   -> provider-family-safe downgrade
@@ -19,9 +20,20 @@ validated execution task
 
 Route resolution is pure. Request IDs and timestamps are added afterward and do not participate in routing equivalence.
 
-## Search policy authority
+## Capability authority
 
-The application declares the capability; the router selects the provider. That split is enforced by a single resolver, `resolveSearchPolicy()` in `src/matrices/search-policy.ts`:
+The application declares the capability; the router selects the provider. One authority chain turns a `TaskDescriptor` into one decision that both routing and dispatch consume:
+
+```text
+TaskDescriptor
+  -> resolveCapabilities (search, source, vision, images)
+  -> validateCapabilities (fail closed on unsupported combinations)
+  -> resolve provider/model
+  -> reserve budget
+  -> dispatch EXACT resolved capability
+```
+
+`resolveSearchPolicy()` in `src/matrices/search-policy.ts` is the single implementation of the search rule:
 
 ```text
 typeof task.requiresSearch === 'boolean'
@@ -30,21 +42,32 @@ otherwise
   -> { required: isSearchTask(task.type), source: TASK_DEFAULT }
 ```
 
-There is exactly one implementation of this rule. `requiresSearchProvider()` is a boolean view of it and `isSearchTask()` supplies only the `TaskType` default. `resolveRoute()` consumes the resolution and copies `searchRequired` and `searchPolicySource` onto every `RoutingResolution`, so a decision is auditable without inferring intent from model names.
+`requiresSearchProvider()` is a boolean view of it and `isSearchTask()` supplies only the `TaskType` default. `resolveCapabilities()` composes the search policy with the canonical vision-task inventory (`VISION_TASKS`, owned by `search-policy.ts`) and the effective image set. `resolveRoute()` consumes the validated capabilities and copies `searchRequired`, `searchPolicySource`, and `visionRequired` onto every `RoutingResolution`; `dispatchProvider()` branches on the same decision fields and asserts the provider contract each branch requires. Dispatch never re-derives a plane from the raw task.
 
-Two invariants keep the audit honest:
+Fail-closed validation refuses every combination the provider plane would silently drop, before any budget reservation or provider dispatch:
 
-- A resolved Perplexity config always has `disableSearch: false`. A search decision can never dispatch a config with web search turned off.
+| Combination | Error code |
+| --- | --- |
+| Vision task without images | `VISION_INPUT_REQUIRED` |
+| Search + vision together | `UNSUPPORTED_CAPABILITY_COMBINATION` |
+| Images on a non-vision task | `IMAGES_NOT_SUPPORTED_FOR_TASK` |
+| `recency` / `domainFilter` without search | `SEARCH_MODIFIER_WITHOUT_SEARCH` |
+| `consensus` on a non-search route | `CONSENSUS_REQUIRES_SEARCH` |
+
+Three invariants keep the audit honest:
+
+- A resolved Perplexity config always has `disableSearch: false`, and `resolvePerplexityConfig()` refuses non-search tasks. A search decision can never dispatch a config with web search turned off.
 - Before dispatch, `decision.searchRequired` must equal `decision.provider === Provider.PERPLEXITY`. A disagreement in either direction is a hard error, not a downgrade.
+- Failed routed calls are auditable: `RoutingDecision` records `outcome`, `failureKind`, and `errorCode` on failure, without ever logging prompts, keys, or image contents.
 
-Search and vision have no combined provider contract. A vision `TaskType` carrying images with `requiresSearch: true` throws `UnsupportedCapabilityCombinationError` from route resolution — before request identity, budget reservation, circuit permit, or provider dispatch — so neither capability is silently discarded. Because the throw precedes reservation and permit acquisition, it cannot affect budget state or provider circuit health.
+Because every refusal precedes reservation and permit acquisition, none of them can affect budget state or provider circuit health.
 
 ## Module ownership
 
 ```text
 src/types.ts                     public legacy contracts
 src/schemas.ts                   runtime validation for public legacy input
-src/matrices/*                   deterministic model and search resolution
+src/matrices/*                   deterministic model resolution plus capability authority
 src/pricing.ts                   canonical OpenRouter price table
 src/budget/*                     process-local admission and spend accounting
 src/circuit-breaker.ts           process-local provider health control
