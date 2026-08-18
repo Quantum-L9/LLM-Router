@@ -10,8 +10,7 @@ import {
 import { CircuitBreaker, CircuitOpenError, type CircuitPermit } from './circuit-breaker.js';
 import { resolveGeneralConfig, getFallbackChain } from './matrices/general-matrix.js';
 import { resolvePerplexityConfig } from './matrices/perplexity-matrix.js';
-import { UnsupportedCapabilityCombinationError } from './matrices/search-policy.js';
-import { resolveCapabilities, VISION_TASKS } from './matrices/capabilities.js';
+import { assertSupportedCapabilities, resolveCapabilities, VISION_TASKS } from './matrices/capabilities.js';
 import { classifyProviderError, isCircuitFailure } from './provider-errors.js';
 import { OpenRouterClient, validateImageUrl, type OpenRouterClientLike } from './providers/openrouter.js';
 import { PerplexityClient, type PerplexityClientLike } from './providers/perplexity.js';
@@ -43,17 +42,11 @@ export function resolveRoute(task: TaskDescriptor): RoutingResolution {
   const capabilities = resolveCapabilities(task);
   const { searchRequired, searchPolicySource, visionRequired } = capabilities;
   const audit = { taskType: task.type, complexity: task.complexity, searchRequired, searchPolicySource };
-  const imageCount = task.images?.length ?? 0;
 
-  // Fail closed before either capability can be silently discarded. The search
-  // plane has no multimodal transport, so a visual task carrying images cannot
-  // also be answered by web search.
-  if (searchRequired && visionRequired && imageCount > 0) {
-    throw new UnsupportedCapabilityCombinationError(
-      `Task[${task.type}] supplied ${imageCount} image(s) and requires search, but no provider in this router serves search and vision together. Split the work into a vision task and a search task.`,
-      { taskType: task.type, searchRequired: true, imageCount },
-    );
-  }
+  // Fail closed before any capability can be silently discarded: search+vision
+  // together, images on a non-vision task, or a vision task without images are
+  // caller-side contract errors refused before any reservation or dispatch.
+  assertSupportedCapabilities(task, capabilities);
 
   if (searchRequired) {
     const config = resolvePerplexityConfig(task);
@@ -179,6 +172,12 @@ export class L9LLMRouter {
     // router's only search-capable provider.
     if (decision.searchRequired !== (decision.provider === Provider.PERPLEXITY)) {
       throw new Error(`Routing decision searchRequired=${decision.searchRequired} disagrees with provider ${decision.provider}`);
+    }
+    // A vision task must dispatch on the OpenRouter vision plane; Perplexity
+    // has no multimodal transport, and a vision task must never fall through
+    // to the general text path.
+    if (VISION_TASKS.has(task.type) && decision.provider !== Provider.OPENROUTER) {
+      throw new Error(`Vision task ${task.type} disagrees with provider ${decision.provider}`);
     }
     if (decision.provider === Provider.PERPLEXITY) {
       const config = resolvePerplexityConfig(task);

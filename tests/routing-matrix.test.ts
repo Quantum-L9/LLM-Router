@@ -8,7 +8,7 @@ import {
   type GeneralModel,
   type TaskDescriptor,
 } from '../src/types.js';
-import { L9LLMRouter, resolveRoute, UnsupportedCapabilityCombinationError } from '../src/index.js';
+import { L9LLMRouter, resolveRoute } from '../src/index.js';
 import { resolveGeneralConfig } from '../src/matrices/general-matrix.js';
 import { resolveVisionConfig } from '../src/vision/index.js';
 
@@ -47,6 +47,11 @@ const MATRIX: MatrixCase[] = [
   { id: 'K  SCREENSHOT_ANALYSIS+imgs  requiresSearch=false', task: task({ type: TaskType.SCREENSHOT_ANALYSIS, images: IMAGES, requiresSearch: false }), expected: 'VISION', expectedSource: SearchPolicySource.EXPLICIT },
   { id: 'L  SCREENSHOT_ANALYSIS+imgs  requiresSearch=undefined', task: task({ type: TaskType.SCREENSHOT_ANALYSIS, images: IMAGES }), expected: 'VISION', expectedSource: SearchPolicySource.TASK_DEFAULT },
   { id: 'M  SCREENSHOT_ANALYSIS+imgs  requiresSearch=true', task: task({ type: TaskType.SCREENSHOT_ANALYSIS, images: IMAGES, requiresSearch: true }), expected: 'FAIL_CLOSED', expectedSource: SearchPolicySource.EXPLICIT },
+  // Capability-loss hole rows: vision without input fails, images on a
+  // non-vision task fail, and a vision task with images routes to vision.
+  { id: 'R  SCREENSHOT_ANALYSIS no imgs requiresSearch=false', task: task({ type: TaskType.SCREENSHOT_ANALYSIS, requiresSearch: false }), expected: 'FAIL_CLOSED', expectedSource: SearchPolicySource.EXPLICIT },
+  { id: 'S  CONTENT_GENERATION+imgs    requiresSearch=false', task: task({ type: TaskType.CONTENT_GENERATION, images: IMAGES, requiresSearch: false }), expected: 'FAIL_CLOSED', expectedSource: SearchPolicySource.EXPLICIT },
+  { id: 'T  VISUAL_QA+imgs             requiresSearch=false', task: task({ type: TaskType.VISUAL_QA, images: IMAGES, requiresSearch: false }), expected: 'VISION', expectedSource: SearchPolicySource.EXPLICIT },
   // Extra coverage required by §5: explicit true lifts otherwise-general task types.
   { id: 'N  EXTRACTION                requiresSearch=true', task: task({ type: TaskType.EXTRACTION, requiresSearch: true }), expected: 'SEARCH', expectedSource: SearchPolicySource.EXPLICIT },
   { id: 'O  CLASSIFICATION            requiresSearch=true', task: task({ type: TaskType.CLASSIFICATION, requiresSearch: true }), expected: 'SEARCH', expectedSource: SearchPolicySource.EXPLICIT },
@@ -75,10 +80,26 @@ function planeOf(descriptor: TaskDescriptor): Plane {
 
 const VISION_TYPES = new Set<TaskType>([TaskType.VISUAL_QA, TaskType.SCREENSHOT_ANALYSIS, TaskType.LAYOUT_VALIDATION]);
 
+const CAPABILITY_FAILURE_CODES = ['UNSUPPORTED_CAPABILITY_COMBINATION', 'VISION_INPUT_REQUIRED'];
+
+function expectCapabilityFailure(run: () => unknown, id?: string): void {
+  const thrown = (() => {
+    try {
+      run();
+      return undefined;
+    } catch (error) {
+      return error;
+    }
+  })();
+  expect(thrown, id).toBeInstanceOf(Error);
+  const code = (thrown as Error & { code?: string } | undefined)?.code;
+  expect(CAPABILITY_FAILURE_CODES, `${id ?? 'case'} threw code=${String(code)}`).toContain(code);
+}
+
 describe('§16 routing matrix — explicit requiresSearch is authoritative', () => {
   it.each(MATRIX)('$id -> $expected', ({ task: descriptor, expected }) => {
     if (expected === 'FAIL_CLOSED') {
-      expect(() => resolveRoute(descriptor)).toThrow(UnsupportedCapabilityCombinationError);
+      expectCapabilityFailure(() => resolveRoute(descriptor));
       return;
     }
     expect(planeOf(descriptor)).toBe(expected);
@@ -88,7 +109,7 @@ describe('§16 routing matrix — explicit requiresSearch is authoritative', () 
     const router = new L9LLMRouter({ perplexityApiKey: 'p', openrouterApiKey: 'o' }, { idFactory: () => 'id', clock: () => new Date('2026-01-01T00:00:00Z') });
     for (const entry of MATRIX) {
       if (entry.expected === 'FAIL_CLOSED') {
-        expect(() => router.route(entry.task), entry.id).toThrow(UnsupportedCapabilityCombinationError);
+        expectCapabilityFailure(() => router.route(entry.task), entry.id);
         continue;
       }
       const viaRouter = router.route(entry.task);

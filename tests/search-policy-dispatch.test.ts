@@ -150,25 +150,31 @@ describe('§6 search + vision fails closed instead of losing a capability', () =
 
   it('leaves vision model selection for a given image count exactly as it was', () => {
     const { router } = harness();
-    // Regression guard: the conflict check must not perturb the image count the
-    // vision matrix sees, including the empty-array edge case.
-    for (const images of [undefined, [], ['https://cdn.example.com/a.png'], ['https://cdn.example.com/a.png', 'https://cdn.example.com/b.png']]) {
+    // Regression guard: the capability assertion must not perturb the image
+    // count the vision matrix sees. Vision tasks without images are refused
+    // by the capability contract, so only image-bearing cases route.
+    for (const images of [['https://cdn.example.com/a.png'], ['https://cdn.example.com/a.png', 'https://cdn.example.com/b.png']]) {
       for (const complexity of Object.values(TaskComplexity)) {
         const decision = router.route({ clientId: 'c', type: TaskType.SCREENSHOT_ANALYSIS, complexity, images });
-        const expected = resolveVisionConfig(TaskType.SCREENSHOT_ANALYSIS, complexity, images?.length ?? 1);
+        const expected = resolveVisionConfig(TaskType.SCREENSHOT_ANALYSIS, complexity, images.length);
         expect({ model: decision.model, cost: decision.estimatedCost }).toEqual({ model: expected.model, cost: expected.estimatedCostPerCall });
       }
     }
+    for (const images of [undefined, []]) {
+      expect(() => router.route({ clientId: 'c', type: TaskType.SCREENSHOT_ANALYSIS, complexity: TaskComplexity.MEDIUM, images })).toThrow(expect.objectContaining({ code: 'VISION_INPUT_REQUIRED' }));
+    }
   });
 
-  it('a visual TaskType with no images and explicit search is a plain search request', async () => {
+  it('a visual TaskType with no images and explicit search fails as an unsupported combination', async () => {
     const { router, calls } = harness();
-    await router.execute(
-      { clientId: 'c', type: TaskType.SCREENSHOT_ANALYSIS, complexity: TaskComplexity.MEDIUM, requiresSearch: true },
-      's', 'u',
-    );
-    // Nothing visual was supplied, so nothing visual is discarded.
-    expect(calls.search).toHaveLength(1);
+    await expect(
+      router.execute(
+        { clientId: 'c', type: TaskType.SCREENSHOT_ANALYSIS, complexity: TaskComplexity.MEDIUM, requiresSearch: true },
+        's', 'u',
+      ),
+    ).rejects.toThrow(expect.objectContaining({ code: 'UNSUPPORTED_CAPABILITY_COMBINATION' }));
+    // No provider plane may pretend the combined request was honoured.
+    expect(calls.search).toHaveLength(0);
     expect(calls.vision).toHaveLength(0);
   });
 });
