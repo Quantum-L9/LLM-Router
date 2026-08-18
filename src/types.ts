@@ -46,21 +46,6 @@ export interface SearchPolicyResolution {
   source: SearchPolicySource;
 }
 
-/**
- * The router's resolved view of the capabilities a task requests.
- *
- * One canonical resolver (`resolveCapabilities`) derives this so routing,
- * failure semantics, and the audit trail all read the same truth:
- * `searchRequired` and `searchPolicySource` reuse the search-policy resolver,
- * and `visionRequired` is true exactly for the task types whose images the
- * OpenRouter vision branch consumes.
- */
-export interface ResolvedCapabilities {
-  searchRequired: boolean;
-  searchPolicySource: SearchPolicySource;
-  visionRequired: boolean;
-}
-
 export enum SearchContextSize { LOW = 'low', MEDIUM = 'medium', HIGH = 'high' }
 export enum SearchMode { WEB = 'web', ACADEMIC = 'academic', SEC = 'sec' }
 export enum RecencyFilter { HOUR = 'hour', DAY = 'day', WEEK = 'week', MONTH = 'month', YEAR = 'year', NONE = 'none' }
@@ -222,7 +207,7 @@ export interface RoutingResolution {
   searchRequired: boolean;
   /** Whether `searchRequired` came from the caller or from the TaskType default. */
   searchPolicySource: SearchPolicySource;
-  /** Whether this decision resolved to the vision-capable provider plane. */
+  /** Whether the task type implies a vision-backed provider. Dispatch consumes this instead of re-deriving vision from the task. */
   visionRequired: boolean;
 }
 
@@ -234,6 +219,12 @@ export interface RoutingDecision extends RoutingResolution {
   timestamp: string;
   downgraded?: boolean;
   downgradedFrom?: GeneralModel | SonarModel;
+  /** Terminal state of the routed call. Set to SUCCESS on provider completion; FAILED when the call fails after route resolution. */
+  outcome?: 'SUCCESS' | 'FAILED';
+  /** Classification of a failed routed call. Never carries prompts, keys, or image contents. */
+  failureKind?: ProviderFailureKind;
+  /** Provider error code, or the error name for local policy failures. */
+  errorCode?: string;
 }
 
 export interface CircuitBreakerState {

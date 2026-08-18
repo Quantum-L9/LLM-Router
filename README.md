@@ -114,7 +114,7 @@ await router.execute(
 
 ### Auditing a routing decision
 
-Every `RoutingDecision` — from `route()` and from `getCallLog()` — reports whether search was selected and on whose authority, alongside `taskType`, `complexity`, `provider`, `model`, `reason`, `estimatedCost`, `taskId`, `clientId`, `timestamp`, downgrade state, and (after execution) `actualCost` and `latencyMs`. No credentials or prompts are recorded.
+Every `RoutingDecision` — from `route()` and from `getCallLog()` — reports whether search was selected and on whose authority (`searchRequired`, `searchPolicySource`), whether the route is vision-backed (`visionRequired`), and, after execution, the call outcome: `actualCost`, `latencyMs`, and for failed routed calls `outcome: 'FAILED'` with `failureKind` and `errorCode`. The same decision object drives dispatch, so the audit can never disagree with what actually executed. No credentials, prompts, or image contents are recorded.
 
 ```ts
 const decision = router.route({ clientId: 'tenant-a', type: TaskType.MARKET_RESEARCH, complexity: TaskComplexity.HIGH, requiresSearch: false });
@@ -127,11 +127,23 @@ decision.provider;            // Provider.OPENROUTER
 
 ### Unsupported capability combinations
 
-No provider in this router serves search and vision together. A visual task that supplies images *and* sets `requiresSearch: true` is refused with `UnsupportedCapabilityCombinationError` (code `UNSUPPORTED_CAPABILITY_COMBINATION`) before any budget reservation, circuit permit, or provider dispatch — rather than silently dropping the images or silently skipping the search. Split such work into a vision task and a search task.
+The router fails closed on every capability combination the provider plane cannot execute faithfully — nothing is silently dropped:
+
+| Combination | Error code |
+| --- | --- |
+| Visual task without images | `VISION_INPUT_REQUIRED` |
+| Search and vision together | `UNSUPPORTED_CAPABILITY_COMBINATION` |
+| Images on a non-visual task | `IMAGES_NOT_SUPPORTED_FOR_TASK` |
+| `recency` / `domainFilter` without search | `SEARCH_MODIFIER_WITHOUT_SEARCH` |
+| `consensus` on a non-search route | `CONSENSUS_REQUIRES_SEARCH` |
+
+All of these throw `UnsupportedCapabilityCombinationError` before any budget reservation, circuit permit, or provider dispatch, so an invalid request never half-executes and never affects budget state or circuit health. Split search+vision work into a vision task and a search task.
 
 ## Vision execution
 
 Images supplied through execution options are merged into the validated task before routing. This ensures model selection and budget estimation use the same image count that reaches the provider.
+
+A vision task without images fails closed with `VISION_INPUT_REQUIRED` instead of silently degrading to a text-only call, and images attached to a non-visual task fail with `IMAGES_NOT_SUPPORTED_FOR_TASK` instead of being ignored.
 
 ```ts
 const result = await router.execute(
@@ -157,7 +169,7 @@ Only HTTPS public URLs and bounded `data:image/*;base64` payloads are accepted. 
 
 For eligible high-complexity Perplexity tasks, `{ consensus: true }` executes the configured variations in parallel. The returned content is selected from the successful responses, while token and cost fields represent the aggregate successful consensus execution so budget reconciliation does not undercount spend.
 
-Consensus is an execution modifier, not search-policy authority. It applies only to a route that already resolved to the search plane; on a general or vision route it is inert and never pulls the task onto a search provider.
+Consensus is an execution modifier, not search-policy authority. It applies only to a route that already resolved to the search plane; requesting it on a general or vision route throws `CONSENSUS_REQUIRES_SEARCH` before budget reservation instead of being silently ignored.
 
 ## Budget semantics
 
