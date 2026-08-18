@@ -160,4 +160,16 @@ describe('§17 routing audit — searchRequired and searchPolicySource', () => {
     expect(serialized).not.toContain('pplx-secret');
     expect(serialized).not.toContain('or-secret');
   });
+
+  it('reports capability truth on every routing decision', () => {
+    const router = new L9LLMRouter({ perplexityApiKey: 'p', openrouterApiKey: 'o' }, { idFactory: () => 'id', clock: () => new Date('2026-01-01T00:00:00Z') });
+    const vision = router.route(task({ type: TaskType.SCREENSHOT_ANALYSIS, images: IMAGES, requiresSearch: false }));
+    expect(vision).toMatchObject({ provider: Provider.OPENROUTER, searchRequired: false, searchPolicySource: SearchPolicySource.EXPLICIT, visionRequired: true });
+
+    const general = router.route(task({ type: TaskType.CONTENT_GENERATION, requiresSearch: false }));
+    expect(general).toMatchObject({ provider: Provider.OPENROUTER, searchRequired: false, searchPolicySource: SearchPolicySource.EXPLICIT, visionRequired: false });
+
+    const search = router.route(task({ type: TaskType.STRATEGIC_REASONING, requiresSearch: true }));
+    expect(search).toMatchObject({ provider: Provider.PERPLEXITY, searchRequired: true, searchPolicySource: SearchPolicySource.EXPLICIT, visionRequired: false });
+  });
 });

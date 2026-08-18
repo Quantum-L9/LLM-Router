@@ -222,6 +222,8 @@ export interface RoutingResolution {
   searchRequired: boolean;
   /** Whether `searchRequired` came from the caller or from the TaskType default. */
   searchPolicySource: SearchPolicySource;
+  /** Whether this decision resolved to the vision-capable provider plane. */
+  visionRequired: boolean;
 }
 
 export interface RoutingDecision extends RoutingResolution {

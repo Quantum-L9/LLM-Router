@@ -41,7 +41,7 @@ export interface RouterDependencies {
 export function resolveRoute(task: TaskDescriptor): RoutingResolution {
   const capabilities = resolveCapabilities(task);
   const { searchRequired, searchPolicySource, visionRequired } = capabilities;
-  const audit = { taskType: task.type, complexity: task.complexity, searchRequired, searchPolicySource };
+  const audit = { taskType: task.type, complexity: task.complexity, searchRequired, searchPolicySource, visionRequired };
 
   // Fail closed before any capability can be silently discarded: search+vision
   // together, images on a non-vision task, or a vision task without images are
