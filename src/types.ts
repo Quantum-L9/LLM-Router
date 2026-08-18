@@ -46,6 +46,21 @@ export interface SearchPolicyResolution {
   source: SearchPolicySource;
 }
 
+/**
+ * The router's resolved view of the capabilities a task requests.
+ *
+ * One canonical resolver (`resolveCapabilities`) derives this so routing,
+ * failure semantics, and the audit trail all read the same truth:
+ * `searchRequired` and `searchPolicySource` reuse the search-policy resolver,
+ * and `visionRequired` is true exactly for the task types whose images the
+ * OpenRouter vision branch consumes.
+ */
+export interface ResolvedCapabilities {
+  searchRequired: boolean;
+  searchPolicySource: SearchPolicySource;
+  visionRequired: boolean;
+}
+
 export enum SearchContextSize { LOW = 'low', MEDIUM = 'medium', HIGH = 'high' }
 export enum SearchMode { WEB = 'web', ACADEMIC = 'academic', SEC = 'sec' }
 export enum RecencyFilter { HOUR = 'hour', DAY = 'day', WEEK = 'week', MONTH = 'month', YEAR = 'year', NONE = 'none' }

@@ -10,7 +10,8 @@ import {
 import { CircuitBreaker, CircuitOpenError, type CircuitPermit } from './circuit-breaker.js';
 import { resolveGeneralConfig, getFallbackChain } from './matrices/general-matrix.js';
 import { resolvePerplexityConfig } from './matrices/perplexity-matrix.js';
-import { resolveSearchPolicy, UnsupportedCapabilityCombinationError } from './matrices/search-policy.js';
+import { UnsupportedCapabilityCombinationError } from './matrices/search-policy.js';
+import { resolveCapabilities, VISION_TASKS } from './matrices/capabilities.js';
 import { classifyProviderError, isCircuitFailure } from './provider-errors.js';
 import { OpenRouterClient, validateImageUrl, type OpenRouterClientLike } from './providers/openrouter.js';
 import { PerplexityClient, type PerplexityClientLike } from './providers/perplexity.js';
@@ -19,17 +20,15 @@ import {
   GeneralModel,
   Provider,
   SonarModel,
-  TaskType,
   type BudgetConfig,
   type LLMResponse,
   type RouterConfig,
   type RoutingDecision,
   type RoutingResolution,
   type TaskDescriptor,
+  type TaskType,
 } from './types.js';
 import { generateFullSiteQAPlan, resolveVisionConfig, VIEWPORTS, type FullSiteQAConfig, type VisualQATask } from './vision/index.js';
-
-const VISION_TASKS = new Set<TaskType>([TaskType.VISUAL_QA, TaskType.SCREENSHOT_ANALYSIS, TaskType.LAYOUT_VALIDATION]);
 
 export interface RouterDependencies {
   clock?: () => Date;
@@ -41,25 +40,26 @@ export interface RouterDependencies {
 }
 
 export function resolveRoute(task: TaskDescriptor): RoutingResolution {
-  const policy = resolveSearchPolicy(task);
-  const audit = { taskType: task.type, complexity: task.complexity, searchRequired: policy.required, searchPolicySource: policy.source };
+  const capabilities = resolveCapabilities(task);
+  const { searchRequired, searchPolicySource, visionRequired } = capabilities;
+  const audit = { taskType: task.type, complexity: task.complexity, searchRequired, searchPolicySource };
   const imageCount = task.images?.length ?? 0;
 
   // Fail closed before either capability can be silently discarded. The search
   // plane has no multimodal transport, so a visual task carrying images cannot
   // also be answered by web search.
-  if (policy.required && VISION_TASKS.has(task.type) && imageCount > 0) {
+  if (searchRequired && visionRequired && imageCount > 0) {
     throw new UnsupportedCapabilityCombinationError(
       `Task[${task.type}] supplied ${imageCount} image(s) and requires search, but no provider in this router serves search and vision together. Split the work into a vision task and a search task.`,
       { taskType: task.type, searchRequired: true, imageCount },
     );
   }
 
-  if (policy.required) {
+  if (searchRequired) {
     const config = resolvePerplexityConfig(task);
     return { ...audit, provider: Provider.PERPLEXITY, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason };
   }
-  if (VISION_TASKS.has(task.type)) {
+  if (visionRequired) {
     const config = resolveVisionConfig(task.type as TaskType.VISUAL_QA | TaskType.SCREENSHOT_ANALYSIS | TaskType.LAYOUT_VALIDATION, task.complexity, task.images?.length ?? 1);
     return { ...audit, provider: Provider.OPENROUTER, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason };
   }
