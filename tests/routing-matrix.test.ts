@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   Provider,
+  RecencyFilter,
   SearchPolicySource,
   SonarModel,
   TaskComplexity,
@@ -8,7 +9,7 @@ import {
   type GeneralModel,
   type TaskDescriptor,
 } from '../src/types.js';
-import { L9LLMRouter, resolveRoute, UnsupportedCapabilityCombinationError } from '../src/index.js';
+import { L9LLMRouter, resolveRoute, UnsupportedCapabilityCombinationError, type CapabilityConflictCode } from '../src/index.js';
 import { resolveGeneralConfig } from '../src/matrices/general-matrix.js';
 import { resolveVisionConfig } from '../src/vision/index.js';
 
@@ -25,6 +26,8 @@ interface MatrixCase {
   task: TaskDescriptor;
   expected: Plane;
   expectedSource: SearchPolicySource;
+  /** Required for FAIL_CLOSED rows: the exact machine-readable conflict code. */
+  expectedCode?: CapabilityConflictCode;
 }
 
 const task = (over: Partial<TaskDescriptor> & Pick<TaskDescriptor, 'type'>): TaskDescriptor => ({
@@ -46,7 +49,14 @@ const MATRIX: MatrixCase[] = [
   { id: 'J  CONTENT_GENERATION        requiresSearch=true', task: task({ type: TaskType.CONTENT_GENERATION, requiresSearch: true }), expected: 'SEARCH', expectedSource: SearchPolicySource.EXPLICIT },
   { id: 'K  SCREENSHOT_ANALYSIS+imgs  requiresSearch=false', task: task({ type: TaskType.SCREENSHOT_ANALYSIS, images: IMAGES, requiresSearch: false }), expected: 'VISION', expectedSource: SearchPolicySource.EXPLICIT },
   { id: 'L  SCREENSHOT_ANALYSIS+imgs  requiresSearch=undefined', task: task({ type: TaskType.SCREENSHOT_ANALYSIS, images: IMAGES }), expected: 'VISION', expectedSource: SearchPolicySource.TASK_DEFAULT },
-  { id: 'M  SCREENSHOT_ANALYSIS+imgs  requiresSearch=true', task: task({ type: TaskType.SCREENSHOT_ANALYSIS, images: IMAGES, requiresSearch: true }), expected: 'FAIL_CLOSED', expectedSource: SearchPolicySource.EXPLICIT },
+  { id: 'M  SCREENSHOT_ANALYSIS+imgs  requiresSearch=true', task: task({ type: TaskType.SCREENSHOT_ANALYSIS, images: IMAGES, requiresSearch: true }), expected: 'FAIL_CLOSED', expectedSource: SearchPolicySource.EXPLICIT, expectedCode: 'UNSUPPORTED_CAPABILITY_COMBINATION' },
+  // Capability-integrity rows from the contract: combinations the execution
+  // plane cannot honor must fail closed with a machine-readable code.
+  { id: 'R  SCREENSHOT_ANALYSIS        images=[]', task: task({ type: TaskType.SCREENSHOT_ANALYSIS, images: [] }), expected: 'FAIL_CLOSED', expectedSource: SearchPolicySource.TASK_DEFAULT, expectedCode: 'VISION_INPUT_REQUIRED' },
+  { id: 'S  SCREENSHOT_ANALYSIS        images=undefined', task: task({ type: TaskType.SCREENSHOT_ANALYSIS }), expected: 'FAIL_CLOSED', expectedSource: SearchPolicySource.TASK_DEFAULT, expectedCode: 'VISION_INPUT_REQUIRED' },
+  { id: 'T  CONTENT_GENERATION        images=[image]', task: task({ type: TaskType.CONTENT_GENERATION, images: IMAGES }), expected: 'FAIL_CLOSED', expectedSource: SearchPolicySource.TASK_DEFAULT, expectedCode: 'IMAGES_NOT_SUPPORTED_FOR_TASK' },
+  { id: 'U  STRATEGIC_REASONING       requiresSearch=false + domainFilter', task: task({ type: TaskType.STRATEGIC_REASONING, requiresSearch: false, domainFilter: ['example.com'] }), expected: 'FAIL_CLOSED', expectedSource: SearchPolicySource.EXPLICIT, expectedCode: 'SEARCH_MODIFIER_WITHOUT_SEARCH' },
+  { id: 'V  STRATEGIC_REASONING       requiresSearch=undefined + recency', task: task({ type: TaskType.STRATEGIC_REASONING, recency: RecencyFilter.WEEK }), expected: 'FAIL_CLOSED', expectedSource: SearchPolicySource.TASK_DEFAULT, expectedCode: 'SEARCH_MODIFIER_WITHOUT_SEARCH' },
   // Extra coverage required by §5: explicit true lifts otherwise-general task types.
   { id: 'N  EXTRACTION                requiresSearch=true', task: task({ type: TaskType.EXTRACTION, requiresSearch: true }), expected: 'SEARCH', expectedSource: SearchPolicySource.EXPLICIT },
   { id: 'O  CLASSIFICATION            requiresSearch=true', task: task({ type: TaskType.CLASSIFICATION, requiresSearch: true }), expected: 'SEARCH', expectedSource: SearchPolicySource.EXPLICIT },
@@ -76,9 +86,18 @@ function planeOf(descriptor: TaskDescriptor): Plane {
 const VISION_TYPES = new Set<TaskType>([TaskType.VISUAL_QA, TaskType.SCREENSHOT_ANALYSIS, TaskType.LAYOUT_VALIDATION]);
 
 describe('§16 routing matrix — explicit requiresSearch is authoritative', () => {
-  it.each(MATRIX)('$id -> $expected', ({ task: descriptor, expected }) => {
+  it.each(MATRIX)('$id -> $expected', ({ task: descriptor, expected, expectedCode }) => {
     if (expected === 'FAIL_CLOSED') {
-      expect(() => resolveRoute(descriptor)).toThrow(UnsupportedCapabilityCombinationError);
+      const failed = (() => {
+        try {
+          resolveRoute(descriptor);
+          return undefined;
+        } catch (error) {
+          return error as UnsupportedCapabilityCombinationError;
+        }
+      })();
+      expect(failed, 'expected a fail-closed throw').toBeInstanceOf(UnsupportedCapabilityCombinationError);
+      expect(failed?.code).toBe(expectedCode);
       return;
     }
     expect(planeOf(descriptor)).toBe(expected);

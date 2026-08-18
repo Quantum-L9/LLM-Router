@@ -11,10 +11,9 @@ import {
   type TaskDescriptor,
 } from '../types.js';
 // Re-exported for backward compatibility: `isSearchTask` historically lived in
-// this module. Its canonical home is now ./search-policy.ts, and nothing here
-// calls it any more — the search decision is made before a Perplexity config
-// is ever resolved.
+// this module. Its canonical home is now ./search-policy.ts.
 export { isSearchTask } from './search-policy.js';
+import { resolveSearchPolicy } from './search-policy.js';
 
 function selectSonarModel(complexity: TaskComplexity, rank: number): SonarModel {
   if (complexity === TaskComplexity.CRITICAL) return SonarModel.SONAR_DEEP_RESEARCH;
@@ -40,6 +39,12 @@ function selectReasoningEffort(model: SonarModel, complexity: TaskComplexity): '
 }
 
 export function resolvePerplexityConfig(task: TaskDescriptor): PerplexityConfig {
+  // Provider config and routing authority must agree: a Perplexity config is
+  // only ever produced for a route that resolved to search. A non-search task
+  // reaching this resolver is a contract violation, not a configurable state.
+  if (!resolveSearchPolicy(task).required) {
+    throw new Error('resolvePerplexityConfig called for a non-search task');
+  }
   const rank = complexityRank(task.complexity);
   const model = selectSonarModel(task.complexity, rank);
   const searchContextSize = selectSearchContextSize(rank);
