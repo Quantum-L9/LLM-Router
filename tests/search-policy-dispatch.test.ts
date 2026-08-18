@@ -11,7 +11,7 @@ import {
   type PerplexityConfig,
   type VisionConfig,
 } from '../src/types.js';
-import { L9LLMRouter, UnsupportedCapabilityCombinationError } from '../src/index.js';
+import { L9LLMRouter, UnsupportedCapabilityCombinationError, requiresSearchProvider } from '../src/index.js';
 import { ProviderRequestError } from '../src/provider-errors.js';
 import { resolvePerplexityConfig } from '../src/matrices/perplexity-matrix.js';
 import { buildRequestBody } from '../src/providers/perplexity.js';
@@ -151,25 +151,39 @@ describe('§6 search + vision fails closed instead of losing a capability', () =
   it('leaves vision model selection for a given image count exactly as it was', () => {
     const { router } = harness();
     // Regression guard: the conflict check must not perturb the image count the
-    // vision matrix sees, including the empty-array edge case.
-    for (const images of [undefined, [], ['https://cdn.example.com/a.png'], ['https://cdn.example.com/a.png', 'https://cdn.example.com/b.png']]) {
+    // vision matrix sees on valid vision routes — and a vision task without
+    // images must fail closed instead of resolving to a phantom vision route.
+    for (const images of [undefined, []] as (string[] | undefined)[]) {
+      const failed = (() => {
+        try {
+          router.route({ clientId: 'c', type: TaskType.SCREENSHOT_ANALYSIS, complexity: TaskComplexity.MEDIUM, images });
+          return undefined;
+        } catch (error) {
+          return error as UnsupportedCapabilityCombinationError;
+        }
+      })();
+      expect(failed).toBeInstanceOf(UnsupportedCapabilityCombinationError);
+      expect(failed?.code).toBe('VISION_INPUT_REQUIRED');
+    }
+    for (const images of [['https://cdn.example.com/a.png'], ['https://cdn.example.com/a.png', 'https://cdn.example.com/b.png']]) {
       for (const complexity of Object.values(TaskComplexity)) {
         const decision = router.route({ clientId: 'c', type: TaskType.SCREENSHOT_ANALYSIS, complexity, images });
-        const expected = resolveVisionConfig(TaskType.SCREENSHOT_ANALYSIS, complexity, images?.length ?? 1);
+        const expected = resolveVisionConfig(TaskType.SCREENSHOT_ANALYSIS, complexity, images.length);
         expect({ model: decision.model, cost: decision.estimatedCost }).toEqual({ model: expected.model, cost: expected.estimatedCostPerCall });
       }
     }
   });
 
-  it('a visual TaskType with no images and explicit search is a plain search request', async () => {
+  it('a visual TaskType with no images fails closed even when search is requested', async () => {
     const { router, calls } = harness();
-    await router.execute(
+    await expect(router.execute(
       { clientId: 'c', type: TaskType.SCREENSHOT_ANALYSIS, complexity: TaskComplexity.MEDIUM, requiresSearch: true },
       's', 'u',
-    );
-    // Nothing visual was supplied, so nothing visual is discarded.
-    expect(calls.search).toHaveLength(1);
+    )).rejects.toMatchObject({ name: 'UnsupportedCapabilityCombinationError', code: 'VISION_INPUT_REQUIRED' });
+    // No capability was silently chosen, and no provider was touched.
+    expect(calls.search).toHaveLength(0);
     expect(calls.vision).toHaveLength(0);
+    expect(calls.general).toHaveLength(0);
   });
 });
 
@@ -178,7 +192,14 @@ describe('§7 Perplexity config agrees with the routing decision', () => {
     for (const type of Object.values(TaskType)) {
       for (const complexity of Object.values(TaskComplexity)) {
         for (const requiresSearch of [true, false, undefined]) {
-          expect(resolvePerplexityConfig({ type, complexity, requiresSearch, clientId: 'c' }).disableSearch).toBe(false);
+          const task = { type, complexity, requiresSearch, clientId: 'c' };
+          if (requiresSearchProvider(task)) {
+            expect(resolvePerplexityConfig(task).disableSearch).toBe(false);
+          } else {
+            // A non-search task reaching the Perplexity resolver is a contract
+            // violation, not a configurable state.
+            expect(() => resolvePerplexityConfig(task)).toThrow(/non-search task/);
+          }
         }
       }
     }
@@ -204,17 +225,15 @@ describe('§7 Perplexity config agrees with the routing decision', () => {
 });
 
 describe('§14 consensus is an execution modifier, not search-policy authority', () => {
-  it('does not let consensus=true pull a non-search task onto the search plane', async () => {
+  it('rejects consensus=true on a non-search route instead of silently ignoring it', async () => {
     const { router, calls } = harness();
-    const result = await router.execute(
+    await expect(router.execute(
       { clientId: 'c', type: TaskType.COMPETITOR_RESEARCH, complexity: TaskComplexity.HIGH, requiresSearch: false },
       's', 'u', { consensus: true },
-    );
+    )).rejects.toMatchObject({ name: 'UnsupportedCapabilityCombinationError', code: 'CONSENSUS_REQUIRES_SEARCH' });
     expect(calls.consensus).toHaveLength(0);
     expect(calls.search).toHaveLength(0);
-    expect(calls.general).toHaveLength(1);
-    expect(result.provider).toBe(Provider.OPENROUTER);
-    expect(router.getCallLog()[0]).toMatchObject({ searchRequired: false, searchPolicySource: SearchPolicySource.EXPLICIT });
+    expect(calls.general).toHaveLength(0);
   });
 
   it('still applies consensus on an actually-selected search route', async () => {

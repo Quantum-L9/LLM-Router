@@ -10,7 +10,7 @@ import {
 import { CircuitBreaker, CircuitOpenError, type CircuitPermit } from './circuit-breaker.js';
 import { resolveGeneralConfig, getFallbackChain } from './matrices/general-matrix.js';
 import { resolvePerplexityConfig } from './matrices/perplexity-matrix.js';
-import { resolveSearchPolicy, UnsupportedCapabilityCombinationError } from './matrices/search-policy.js';
+import { resolveAndValidateCapabilities, UnsupportedCapabilityCombinationError } from './matrices/search-policy.js';
 import { classifyProviderError, isCircuitFailure } from './provider-errors.js';
 import { OpenRouterClient, validateImageUrl, type OpenRouterClientLike } from './providers/openrouter.js';
 import { PerplexityClient, type PerplexityClientLike } from './providers/perplexity.js';
@@ -19,17 +19,15 @@ import {
   GeneralModel,
   Provider,
   SonarModel,
-  TaskType,
   type BudgetConfig,
   type LLMResponse,
   type RouterConfig,
   type RoutingDecision,
   type RoutingResolution,
   type TaskDescriptor,
+  type TaskType,
 } from './types.js';
 import { generateFullSiteQAPlan, resolveVisionConfig, VIEWPORTS, type FullSiteQAConfig, type VisualQATask } from './vision/index.js';
-
-const VISION_TASKS = new Set<TaskType>([TaskType.VISUAL_QA, TaskType.SCREENSHOT_ANALYSIS, TaskType.LAYOUT_VALIDATION]);
 
 export interface RouterDependencies {
   clock?: () => Date;
@@ -41,26 +39,26 @@ export interface RouterDependencies {
 }
 
 export function resolveRoute(task: TaskDescriptor): RoutingResolution {
-  const policy = resolveSearchPolicy(task);
-  const audit = { taskType: task.type, complexity: task.complexity, searchRequired: policy.required, searchPolicySource: policy.source };
-  const imageCount = task.images?.length ?? 0;
+  // One capability decision for the whole call: routing and dispatch both
+  // consume this resolution, so a request can never be interpreted one way
+  // at routing time and another way at dispatch time. Validation refuses
+  // every combination the provider plane would silently drop.
+  const capabilities = resolveAndValidateCapabilities(task);
+  const audit = {
+    taskType: task.type,
+    complexity: task.complexity,
+    searchRequired: capabilities.searchRequired,
+    searchPolicySource: capabilities.searchPolicySource,
+    visionRequired: capabilities.visionRequired,
+  };
 
-  // Fail closed before either capability can be silently discarded. The search
-  // plane has no multimodal transport, so a visual task carrying images cannot
-  // also be answered by web search.
-  if (policy.required && VISION_TASKS.has(task.type) && imageCount > 0) {
-    throw new UnsupportedCapabilityCombinationError(
-      `Task[${task.type}] supplied ${imageCount} image(s) and requires search, but no provider in this router serves search and vision together. Split the work into a vision task and a search task.`,
-      { taskType: task.type, searchRequired: true, imageCount },
-    );
-  }
-
-  if (policy.required) {
+  if (capabilities.searchRequired) {
     const config = resolvePerplexityConfig(task);
     return { ...audit, provider: Provider.PERPLEXITY, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason };
   }
-  if (VISION_TASKS.has(task.type)) {
-    const config = resolveVisionConfig(task.type as TaskType.VISUAL_QA | TaskType.SCREENSHOT_ANALYSIS | TaskType.LAYOUT_VALIDATION, task.complexity, task.images?.length ?? 1);
+  if (capabilities.visionRequired) {
+    // Validation guarantees at least one image on a vision route.
+    const config = resolveVisionConfig(task.type as TaskType.VISUAL_QA | TaskType.SCREENSHOT_ANALYSIS | TaskType.LAYOUT_VALIDATION, task.complexity, task.images!.length);
     return { ...audit, provider: Provider.OPENROUTER, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason };
   }
   const config = resolveGeneralConfig(task);
@@ -125,6 +123,16 @@ export class L9LLMRouter {
     const images = task.images;
     if (images) for (const image of images) validateImageUrl(image);
     const decision = this.route(task);
+    // Consensus is a search execution modifier, not hidden routing authority:
+    // a non-search route would silently ignore it, so refuse the combination
+    // before any budget reservation.
+    if (options?.consensus && !decision.searchRequired) {
+      throw new UnsupportedCapabilityCombinationError(
+        'Consensus requires a search-backed route',
+        undefined,
+        'CONSENSUS_REQUIRES_SEARCH',
+      );
+    }
     const governedMemory = await hydrateRouterPrompt(this.memory, decision.clientId, task.type, userPrompt);
     const effectiveSystemPrompt = governedMemory ? `${systemPrompt}${governedMemory}` : systemPrompt;
 
@@ -149,6 +157,7 @@ export class L9LLMRouter {
       reservationId = undefined;
       decision.actualCost = response.cost;
       decision.latencyMs = response.latencyMs;
+      decision.outcome = 'SUCCESS';
       this.callLog.push(decision);
       return response;
     } catch (error) {
@@ -160,6 +169,14 @@ export class L9LLMRouter {
         if (isCircuitFailure(error, decision.provider)) this.circuitBreaker.recordFailure(permit, this.clock());
         else this.circuitBreaker.release(permit, this.clock());
       }
+      // Failed routed calls are auditable too: record the classified failure
+      // on the decision before rethrowing. Prompt, keys, and image contents
+      // never enter the call log.
+      const classified = classifyProviderError(error, decision.provider);
+      decision.outcome = 'FAILED';
+      decision.failureKind = classified.kind;
+      decision.errorCode = classified.code ?? (error instanceof Error ? error.name : undefined);
+      this.callLog.push(decision);
       if (providerCompleted) throw error;
       throw this.toExecutionError(error, task, decision);
     }
@@ -173,14 +190,16 @@ export class L9LLMRouter {
     images: string[] | undefined,
     options: { images?: string[]; assistantContext?: string; consensus?: boolean; signal?: AbortSignal } | undefined,
   ): Promise<LLMResponse> {
-    // The audited decision and the plane about to be dispatched must agree in
-    // both directions: a search decision may not execute on the general plane,
-    // and a non-search decision may not execute web search. Perplexity is the
-    // router's only search-capable provider.
+    // Dispatch consumes the resolved decision — it never re-derives the plane
+    // from the raw task. The audited decision and the plane about to be
+    // dispatched must agree in both directions: a search decision may not
+    // execute on the general plane, and a non-search decision may not execute
+    // web search. Perplexity is the router's only search-capable provider.
     if (decision.searchRequired !== (decision.provider === Provider.PERPLEXITY)) {
       throw new Error(`Routing decision searchRequired=${decision.searchRequired} disagrees with provider ${decision.provider}`);
     }
-    if (decision.provider === Provider.PERPLEXITY) {
+    if (decision.searchRequired) {
+      if (decision.provider !== Provider.PERPLEXITY) throw new Error('Search decision resolved a non-Perplexity provider');
       const config = resolvePerplexityConfig(task);
       if (!Object.values(SonarModel).includes(decision.model as SonarModel)) throw new Error('Perplexity route resolved a non-Sonar model');
       // A search route may never dispatch a config that turns search off.
@@ -199,7 +218,9 @@ export class L9LLMRouter {
       }
       return this.perplexity.complete(config, effectiveSystemPrompt, userPrompt, options?.assistantContext, options?.signal);
     }
-    if (VISION_TASKS.has(task.type) && images?.length) {
+    if (decision.visionRequired) {
+      if (decision.provider !== Provider.OPENROUTER) throw new Error('Vision decision resolved a non-OpenRouter provider');
+      if (!images || images.length === 0) throw new Error('Vision route dispatched without images');
       const config = resolveVisionConfig(task.type as TaskType.VISUAL_QA | TaskType.SCREENSHOT_ANALYSIS | TaskType.LAYOUT_VALIDATION, task.complexity, images.length);
       config.model = decision.model as GeneralModel;
       return this.openrouter.completeWithVision(config, effectiveSystemPrompt, userPrompt, images, options?.signal);
@@ -274,8 +295,13 @@ export {
   isSearchTask,
   requiresSearchProvider,
   resolveSearchPolicy,
+  resolveCapabilities,
+  resolveAndValidateCapabilities,
+  validateCapabilities,
+  VISION_TASKS,
   UnsupportedCapabilityCombinationError,
 } from './matrices/search-policy.js';
+export type { ResolvedCapabilities, CapabilityConflictCode } from './matrices/search-policy.js';
 
 export { hydrateRouterPrompt } from './memory.js';
 export type { RouterMemoryConfig } from './memory.js';

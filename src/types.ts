@@ -207,6 +207,8 @@ export interface RoutingResolution {
   searchRequired: boolean;
   /** Whether `searchRequired` came from the caller or from the TaskType default. */
   searchPolicySource: SearchPolicySource;
+  /** Whether the task type implies a vision-backed provider. Dispatch consumes this instead of re-deriving vision from the task. */
+  visionRequired: boolean;
 }
 
 export interface RoutingDecision extends RoutingResolution {
@@ -217,6 +219,12 @@ export interface RoutingDecision extends RoutingResolution {
   timestamp: string;
   downgraded?: boolean;
   downgradedFrom?: GeneralModel | SonarModel;
+  /** Terminal state of the routed call. Set to SUCCESS on provider completion; FAILED when the call fails after route resolution. */
+  outcome?: 'SUCCESS' | 'FAILED';
+  /** Classification of a failed routed call. Never carries prompts, keys, or image contents. */
+  failureKind?: ProviderFailureKind;
+  /** Provider error code, or the error name for local policy failures. */
+  errorCode?: string;
 }
 
 export interface CircuitBreakerState {
