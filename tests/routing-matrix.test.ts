@@ -52,6 +52,7 @@ const MATRIX: MatrixCase[] = [
   { id: 'R  SCREENSHOT_ANALYSIS no imgs requiresSearch=false', task: task({ type: TaskType.SCREENSHOT_ANALYSIS, requiresSearch: false }), expected: 'FAIL_CLOSED', expectedSource: SearchPolicySource.EXPLICIT },
   { id: 'S  CONTENT_GENERATION+imgs    requiresSearch=false', task: task({ type: TaskType.CONTENT_GENERATION, images: IMAGES, requiresSearch: false }), expected: 'FAIL_CLOSED', expectedSource: SearchPolicySource.EXPLICIT },
   { id: 'T  VISUAL_QA+imgs             requiresSearch=false', task: task({ type: TaskType.VISUAL_QA, images: IMAGES, requiresSearch: false }), expected: 'VISION', expectedSource: SearchPolicySource.EXPLICIT },
+  { id: 'U  VISUAL_QA+multiple imgs    requiresSearch=false', task: task({ type: TaskType.VISUAL_QA, images: [...IMAGES, 'https://cdn.example.com/shot2.png'], requiresSearch: false }), expected: 'VISION', expectedSource: SearchPolicySource.EXPLICIT },
   // Extra coverage required by §5: explicit true lifts otherwise-general task types.
   { id: 'N  EXTRACTION                requiresSearch=true', task: task({ type: TaskType.EXTRACTION, requiresSearch: true }), expected: 'SEARCH', expectedSource: SearchPolicySource.EXPLICIT },
   { id: 'O  CLASSIFICATION            requiresSearch=true', task: task({ type: TaskType.CLASSIFICATION, requiresSearch: true }), expected: 'SEARCH', expectedSource: SearchPolicySource.EXPLICIT },
