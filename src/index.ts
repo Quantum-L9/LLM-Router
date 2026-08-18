@@ -10,7 +10,7 @@ import {
 import { CircuitBreaker, CircuitOpenError, type CircuitPermit } from './circuit-breaker.js';
 import { resolveGeneralConfig, getFallbackChain } from './matrices/general-matrix.js';
 import { resolvePerplexityConfig } from './matrices/perplexity-matrix.js';
-import { requiresSearchProvider } from './matrices/search-policy.js';
+import { resolveSearchPolicy, UnsupportedCapabilityCombinationError } from './matrices/search-policy.js';
 import { classifyProviderError, isCircuitFailure } from './provider-errors.js';
 import { OpenRouterClient, validateImageUrl, type OpenRouterClientLike } from './providers/openrouter.js';
 import { PerplexityClient, type PerplexityClientLike } from './providers/perplexity.js';
@@ -41,16 +41,30 @@ export interface RouterDependencies {
 }
 
 export function resolveRoute(task: TaskDescriptor): RoutingResolution {
-  if (requiresSearchProvider(task)) {
+  const policy = resolveSearchPolicy(task);
+  const audit = { taskType: task.type, complexity: task.complexity, searchRequired: policy.required, searchPolicySource: policy.source };
+  const imageCount = task.images?.length ?? 0;
+
+  // Fail closed before either capability can be silently discarded. The search
+  // plane has no multimodal transport, so a visual task carrying images cannot
+  // also be answered by web search.
+  if (policy.required && VISION_TASKS.has(task.type) && imageCount > 0) {
+    throw new UnsupportedCapabilityCombinationError(
+      `Task[${task.type}] supplied ${imageCount} image(s) and requires search, but no provider in this router serves search and vision together. Split the work into a vision task and a search task.`,
+      { taskType: task.type, searchRequired: true, imageCount },
+    );
+  }
+
+  if (policy.required) {
     const config = resolvePerplexityConfig(task);
-    return { taskType: task.type, complexity: task.complexity, provider: Provider.PERPLEXITY, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason };
+    return { ...audit, provider: Provider.PERPLEXITY, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason };
   }
   if (VISION_TASKS.has(task.type)) {
     const config = resolveVisionConfig(task.type as TaskType.VISUAL_QA | TaskType.SCREENSHOT_ANALYSIS | TaskType.LAYOUT_VALIDATION, task.complexity, task.images?.length ?? 1);
-    return { taskType: task.type, complexity: task.complexity, provider: Provider.OPENROUTER, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason };
+    return { ...audit, provider: Provider.OPENROUTER, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason };
   }
   const config = resolveGeneralConfig(task);
-  return { taskType: task.type, complexity: task.complexity, provider: Provider.OPENROUTER, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason };
+  return { ...audit, provider: Provider.OPENROUTER, model: config.model, estimatedCost: config.estimatedCostPerCall, reason: config.resolutionReason };
 }
 
 export function getDowngradedModel(
@@ -159,9 +173,18 @@ export class L9LLMRouter {
     images: string[] | undefined,
     options: { images?: string[]; assistantContext?: string; consensus?: boolean; signal?: AbortSignal } | undefined,
   ): Promise<LLMResponse> {
+    // The audited decision and the plane about to be dispatched must agree in
+    // both directions: a search decision may not execute on the general plane,
+    // and a non-search decision may not execute web search. Perplexity is the
+    // router's only search-capable provider.
+    if (decision.searchRequired !== (decision.provider === Provider.PERPLEXITY)) {
+      throw new Error(`Routing decision searchRequired=${decision.searchRequired} disagrees with provider ${decision.provider}`);
+    }
     if (decision.provider === Provider.PERPLEXITY) {
       const config = resolvePerplexityConfig(task);
       if (!Object.values(SonarModel).includes(decision.model as SonarModel)) throw new Error('Perplexity route resolved a non-Sonar model');
+      // A search route may never dispatch a config that turns search off.
+      if (config.disableSearch) throw new Error('Search route resolved a Perplexity config with search disabled');
       config.model = decision.model as SonarModel;
       if (options?.consensus && config.variations > 1) {
         return this.perplexity.completeWithConsensus(config, effectiveSystemPrompt, userPrompt, options.assistantContext, options.signal).then(consensus => ({
@@ -247,7 +270,12 @@ export { ProviderRequestError } from './provider-errors.js';
 export { TaskValidationError, RouterConfigValidationError } from './schemas.js';
 export { UnsafeImageUrlError, InvalidBaseUrlError, DEFAULT_OPENROUTER_BASE_URL, resolveOpenRouterBaseUrl } from './providers/openrouter.js';
 export { VIEWPORTS } from './vision/index.js';
-export { isSearchTask, requiresSearchProvider } from './matrices/search-policy.js';
+export {
+  isSearchTask,
+  requiresSearchProvider,
+  resolveSearchPolicy,
+  UnsupportedCapabilityCombinationError,
+} from './matrices/search-policy.js';
 
 export { hydrateRouterPrompt } from './memory.js';
 export type { RouterMemoryConfig } from './memory.js';

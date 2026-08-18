@@ -33,6 +33,19 @@ export enum GeneralModel {
   GEMINI_FLASH_VISION = 'google/gemini-2.5-flash',
 }
 
+/**
+ * Why a routing decision required (or did not require) a search provider.
+ *
+ * EXPLICIT     — the caller set `TaskDescriptor.requiresSearch` to a boolean.
+ * TASK_DEFAULT — the caller left it undefined, so the `TaskType` default applied.
+ */
+export enum SearchPolicySource { EXPLICIT = 'explicit', TASK_DEFAULT = 'task_default' }
+
+export interface SearchPolicyResolution {
+  required: boolean;
+  source: SearchPolicySource;
+}
+
 export enum SearchContextSize { LOW = 'low', MEDIUM = 'medium', HIGH = 'high' }
 export enum SearchMode { WEB = 'web', ACADEMIC = 'academic', SEC = 'sec' }
 export enum RecencyFilter { HOUR = 'hour', DAY = 'day', WEEK = 'week', MONTH = 'month', YEAR = 'year', NONE = 'none' }
@@ -190,6 +203,10 @@ export interface RoutingResolution {
   model: GeneralModel | SonarModel;
   estimatedCost: number;
   reason: string;
+  /** Whether this decision resolved to a search-capable provider plane. */
+  searchRequired: boolean;
+  /** Whether `searchRequired` came from the caller or from the TaskType default. */
+  searchPolicySource: SearchPolicySource;
 }
 
 export interface RoutingDecision extends RoutingResolution {

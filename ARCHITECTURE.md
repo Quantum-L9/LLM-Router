@@ -19,6 +19,26 @@ validated execution task
 
 Route resolution is pure. Request IDs and timestamps are added afterward and do not participate in routing equivalence.
 
+## Search policy authority
+
+The application declares the capability; the router selects the provider. That split is enforced by a single resolver, `resolveSearchPolicy()` in `src/matrices/search-policy.ts`:
+
+```text
+typeof task.requiresSearch === 'boolean'
+  -> { required: task.requiresSearch, source: EXPLICIT }
+otherwise
+  -> { required: isSearchTask(task.type), source: TASK_DEFAULT }
+```
+
+There is exactly one implementation of this rule. `requiresSearchProvider()` is a boolean view of it and `isSearchTask()` supplies only the `TaskType` default. `resolveRoute()` consumes the resolution and copies `searchRequired` and `searchPolicySource` onto every `RoutingResolution`, so a decision is auditable without inferring intent from model names.
+
+Two invariants keep the audit honest:
+
+- A resolved Perplexity config always has `disableSearch: false`. A search decision can never dispatch a config with web search turned off.
+- Before dispatch, `decision.searchRequired` must equal `decision.provider === Provider.PERPLEXITY`. A disagreement in either direction is a hard error, not a downgrade.
+
+Search and vision have no combined provider contract. A vision `TaskType` carrying images with `requiresSearch: true` throws `UnsupportedCapabilityCombinationError` from route resolution — before request identity, budget reservation, circuit permit, or provider dispatch — so neither capability is silently discarded. Because the throw precedes reservation and permit acquisition, it cannot affect budget state or provider circuit health.
+
 ## Module ownership
 
 ```text
