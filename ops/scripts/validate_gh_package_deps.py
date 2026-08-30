@@ -29,7 +29,12 @@ def _load_json(path: Path) -> dict[str, Any] | None:
 
 def scoped_deps(package: dict[str, Any]) -> dict[str, str]:
     out: dict[str, str] = {}
-    for kind in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
+    for kind in (
+        "dependencies",
+        "devDependencies",
+        "peerDependencies",
+        "optionalDependencies",
+    ):
         deps = package.get(kind) or {}
         if not isinstance(deps, dict):
             continue
@@ -61,7 +66,9 @@ def entry_problems(name: str, spec: str, entry: dict[str, Any]) -> list[str]:
     problems: list[str] = []
     resolved = str(entry.get("resolved") or "")
     if "npm.pkg.github.com" in resolved:
-        problems.append(f"{name}: lock resolved still uses GitHub Packages: {resolved!r}")
+        problems.append(
+            f"{name}: lock resolved still uses GitHub Packages: {resolved!r}"
+        )
     if not spec_is_local_or_git(spec):
         problems.append(
             f"{name}: spec {spec!r} is not file: or git+; hosted install would hit a registry"
@@ -75,7 +82,10 @@ def main() -> int:
     package = _load_json(Path(DEFAULT_PKG))
     lock = _load_json(Path(DEFAULT_LOCK))
     if package is None:
-        print(f"validate_gh_package_deps: {DEFAULT_PKG} unreadable; skipping", file=sys.stderr)
+        print(
+            f"validate_gh_package_deps: {DEFAULT_PKG} unreadable; skipping",
+            file=sys.stderr,
+        )
         return 0
     deps = scoped_deps(package)
     if not deps:
@@ -85,15 +95,22 @@ def main() -> int:
     for name, spec in sorted(deps.items()):
         entry = entries.get(name)
         if not entry:
-            problems.append(f"{name}: declared ({spec}) but missing from package-lock.json")
+            problems.append(
+                f"{name}: declared ({spec}) but missing from package-lock.json"
+            )
             continue
         problems.extend(entry_problems(name, spec, entry))
     for problem in problems:
         print(f"validate_gh_package_deps: {problem}", file=sys.stderr)
     if problems:
-        print(f"validate_gh_package_deps: {len(problems)} problem(s) found", file=sys.stderr)
+        print(
+            f"validate_gh_package_deps: {len(problems)} problem(s) found",
+            file=sys.stderr,
+        )
         return 1
-    print(f"validate_gh_package_deps: {len(deps)} @quantum-l9 dep(s) are file:/git+ (no Packages)")
+    print(
+        f"validate_gh_package_deps: {len(deps)} @quantum-l9 dep(s) are file:/git+ (no Packages)"
+    )
     return 0
 
 
