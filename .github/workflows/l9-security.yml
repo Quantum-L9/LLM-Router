@@ -9,7 +9,7 @@ on:
 
 jobs:
   l9_security:
-    uses: Quantum-L9/l9-ci-core/.github/workflows/security.yml@v1
+    uses: Quantum-L9/l9-ci-core/.github/workflows/security.yml@v2
     with:
       python-version: "3.12"
       run-npm-audit: false
