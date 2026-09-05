@@ -7,6 +7,6 @@ on:
 
 jobs:
   l9_governance:
-    uses: Quantum-L9/l9-ci-core/.github/workflows/trio-governance.yml@v1
+    uses: Quantum-L9/l9-ci-core/.github/workflows/trio-governance.yml@v2
     with:
       src-directory: "src"
