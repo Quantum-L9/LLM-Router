@@ -104,7 +104,7 @@ jobs:
 
       - name: Normalize provider report
         if: steps.gov.outputs.enabled == 'true'
-        uses: Quantum-L9/l9-ci-core/.github/actions/invoke-sdk@7148fc73dcbf41367f5c5401432dc997b1f4f869
+        uses: Quantum-L9/l9-ci-core/.github/actions/invoke-sdk@4c842cb838b6c49cf44681ecc683a432538fd348
         with:
           executable: ${{ steps.sdk.outputs.executable }}
           operation: semgrep-normalize
@@ -126,7 +126,7 @@ jobs:
 
       - name: Project agent-review payload
         if: steps.gov.outputs.enabled == 'true'
-        uses: Quantum-L9/l9-ci-core/.github/actions/invoke-sdk@7148fc73dcbf41367f5c5401432dc997b1f4f869
+        uses: Quantum-L9/l9-ci-core/.github/actions/invoke-sdk@4c842cb838b6c49cf44681ecc683a432538fd348
         with:
           executable: ${{ steps.sdk.outputs.executable }}
           operation: bundle-project-agent-payload
