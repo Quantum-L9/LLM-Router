@@ -100,7 +100,7 @@ jobs:
       - id: sdk
         name: Provision immutable SDK
         if: steps.gov.outputs.enabled == 'true'
-        uses: Quantum-L9/l9-ci-core/.github/actions/provision-sdk@7148fc73dcbf41367f5c5401432dc997b1f4f869
+        uses: Quantum-L9/l9-ci-core/.github/actions/provision-sdk@2a7354ed590008cd59d254df08f10d6207933366
 
       - name: Normalize provider report
         if: steps.gov.outputs.enabled == 'true'
