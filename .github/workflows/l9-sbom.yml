@@ -7,4 +7,4 @@ on:
 
 jobs:
   l9_sbom:
-    uses: Quantum-L9/l9-ci-core/.github/workflows/sbom.yml@v2
+    uses: Quantum-L9/l9-ci-core/.github/workflows/sbom.yml@450f6ec753435365c6e4212cc898ee9ba560bb7d # v2
