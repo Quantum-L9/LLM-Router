@@ -3,17 +3,10 @@ import { classifyProviderError, ProviderRequestError, throwIfAborted } from '../
 import { Provider, } from '../types.js';
 import { OpenAIChatTransport, } from './openai-transport.js';
 import { GeneralModel as GeneralModelValue } from '../types.js';
-const MODEL_IDS = {
-    [GeneralModelValue.GPT4O_MINI]: 'openai/gpt-4o-mini',
-    [GeneralModelValue.GEMINI_FLASH]: 'google/gemini-2.5-flash',
-    [GeneralModelValue.CLAUDE_HAIKU]: 'anthropic/claude-haiku-4.5',
-    [GeneralModelValue.GPT4O]: 'openai/gpt-4o',
-    [GeneralModelValue.CLAUDE_SONNET]: 'anthropic/claude-sonnet-4',
-    [GeneralModelValue.GEMINI_PRO]: 'google/gemini-2.5-pro',
-    [GeneralModelValue.CLAUDE_OPUS]: 'anthropic/claude-opus-4',
-    [GeneralModelValue.O1]: 'openai/o1',
-    [GeneralModelValue.O3]: 'openai/o3',
-};
+// `GeneralModel` (src/types.ts) is the one canonical table of OpenRouter model
+// ids: each enum value is the id sent on the wire. This map is derived from it so
+// that an id can never be written down twice and drift (tests/model-id-canonical.test.ts).
+const MODEL_IDS = Object.freeze(Object.fromEntries(Object.values(GeneralModelValue).map(id => [id, id])));
 const MAX_INLINE_IMAGE_BYTES = 10 * 1024 * 1024;
 // The `i` flag makes the scheme and the base64 payload case-insensitive, so the
 // character class lists each letter range once (A-Z also matches a-z under `i`).

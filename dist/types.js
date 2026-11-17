@@ -20,16 +20,16 @@ export var GeneralModel;
     GeneralModel["GEMINI_FLASH"] = "google/gemini-2.5-flash";
     GeneralModel["CLAUDE_HAIKU"] = "anthropic/claude-haiku-4.5";
     GeneralModel["GPT4O"] = "openai/gpt-4o";
-    GeneralModel["CLAUDE_SONNET"] = "anthropic/claude-sonnet-4";
+    GeneralModel["CLAUDE_SONNET"] = "anthropic/claude-sonnet-4.6";
     GeneralModel["GEMINI_PRO"] = "google/gemini-2.5-pro";
-    GeneralModel["CLAUDE_OPUS"] = "anthropic/claude-opus-4";
+    GeneralModel["CLAUDE_OPUS"] = "anthropic/claude-opus-4.6";
     GeneralModel["O1"] = "openai/o1";
     GeneralModel["O3"] = "openai/o3";
     // These aliases are retained for 1.x source compatibility.
     // eslint-disable-next-line @typescript-eslint/no-duplicate-enum-values
     GeneralModel["GPT4O_VISION"] = "openai/gpt-4o";
     // eslint-disable-next-line @typescript-eslint/no-duplicate-enum-values
-    GeneralModel["CLAUDE_SONNET_VISION"] = "anthropic/claude-sonnet-4";
+    GeneralModel["CLAUDE_SONNET_VISION"] = "anthropic/claude-sonnet-4.6";
     // eslint-disable-next-line @typescript-eslint/no-duplicate-enum-values
     GeneralModel["GEMINI_FLASH_VISION"] = "google/gemini-2.5-flash";
 })(GeneralModel || (GeneralModel = {}));

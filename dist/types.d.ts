@@ -17,13 +17,13 @@ export declare enum GeneralModel {
     GEMINI_FLASH = "google/gemini-2.5-flash",
     CLAUDE_HAIKU = "anthropic/claude-haiku-4.5",
     GPT4O = "openai/gpt-4o",
-    CLAUDE_SONNET = "anthropic/claude-sonnet-4",
+    CLAUDE_SONNET = "anthropic/claude-sonnet-4.6",
     GEMINI_PRO = "google/gemini-2.5-pro",
-    CLAUDE_OPUS = "anthropic/claude-opus-4",
+    CLAUDE_OPUS = "anthropic/claude-opus-4.6",
     O1 = "openai/o1",
     O3 = "openai/o3",
     GPT4O_VISION = "openai/gpt-4o",
-    CLAUDE_SONNET_VISION = "anthropic/claude-sonnet-4",
+    CLAUDE_SONNET_VISION = "anthropic/claude-sonnet-4.6",
     GEMINI_FLASH_VISION = "google/gemini-2.5-flash"
 }
 /**

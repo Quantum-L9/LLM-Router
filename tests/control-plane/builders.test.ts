@@ -14,7 +14,7 @@ function routeInput(taskProfileHash: string, requestId = 'request-a', reason = '
   return {
     request_id: requestId,
     task_profile_hash: taskProfileHash,
-    selected: { provider: 'openrouter' as const, model: 'anthropic/claude-sonnet-4', temperature: 0.2, max_tokens: 2000, reasoning_depth: 'high' as const, response_format: 'json' as const },
+    selected: { provider: 'openrouter' as const, model: 'anthropic/claude-sonnet-4.6', temperature: 0.2, max_tokens: 2000, reasoning_depth: 'high' as const, response_format: 'json' as const },
     search: { enabled: false, provider: null, search_mode: null, search_context_size: null, recency_filter: null, variations: null, reasoning_effort: null },
     fallback_chain: [{ provider: 'openrouter' as const, model: 'openai/gpt-4o' }, { provider: 'openrouter' as const, model: 'google/gemini-2.5-pro' }],
     policy_decision: { status: 'allowed' as const, applied_rules: ['tenant-default', 'internal-data'], blockers: [] },
@@ -79,7 +79,7 @@ describe('Control Plane builders', () => {
     const profile = buildTaskProfile(profileInput);
     const plan = buildRoutePlan(routeInput(profile.task_profile_hash));
     const hash = 'a'.repeat(64);
-    const record = buildExecutionRecord({ request_id: 'request-a', plan_id: plan.plan_id, route_fingerprint: plan.route_fingerprint, tenant_id: 'tenant-a', node_id: 'node-a', action: 'review', task_profile_hash: profile.task_profile_hash, provider: 'openrouter', model: 'anthropic/claude-sonnet-4', config_hash: hash, prompt_hash: hash, input_hash: hash, output_hash: hash, input_tokens: 10, output_tokens: 20, total_tokens: 30, cost: 0.02, latency_ms: 120, citations_count: 0, fallback_used: false, fallback_from: null, validation_status: 'passed', schema_valid: true, downstream_accepted: true, quality_score: 0.9, failure_reason: null, provider_request_id: 'provider-request', pricing_version: 'pricing/2026-07', finish_reason: 'stop', generated_at: '2026-07-20T12:00:00.000Z' });
+    const record = buildExecutionRecord({ request_id: 'request-a', plan_id: plan.plan_id, route_fingerprint: plan.route_fingerprint, tenant_id: 'tenant-a', node_id: 'node-a', action: 'review', task_profile_hash: profile.task_profile_hash, provider: 'openrouter', model: 'anthropic/claude-sonnet-4.6', config_hash: hash, prompt_hash: hash, input_hash: hash, output_hash: hash, input_tokens: 10, output_tokens: 20, total_tokens: 30, cost: 0.02, latency_ms: 120, citations_count: 0, fallback_used: false, fallback_from: null, validation_status: 'passed', schema_valid: true, downstream_accepted: true, quality_score: 0.9, failure_reason: null, provider_request_id: 'provider-request', pricing_version: 'pricing/2026-07', finish_reason: 'stop', generated_at: '2026-07-20T12:00:00.000Z' });
     expect(verifyExecutionRecord(record)).toEqual(record);
     const signal = buildFeedbackSignal({ signal_type: 'route_success', severity: 'info', task_profile_hash: profile.task_profile_hash, route_fingerprint: plan.route_fingerprint, plan_id: plan.plan_id, evidence_refs: ['evidence-b', 'evidence-a'] });
     expect(signal.evidence_refs).toEqual(['evidence-a', 'evidence-b']);

@@ -19,16 +19,16 @@ export enum GeneralModel {
   GEMINI_FLASH = 'google/gemini-2.5-flash',
   CLAUDE_HAIKU = 'anthropic/claude-haiku-4.5',
   GPT4O = 'openai/gpt-4o',
-  CLAUDE_SONNET = 'anthropic/claude-sonnet-4',
+  CLAUDE_SONNET = 'anthropic/claude-sonnet-4.6',
   GEMINI_PRO = 'google/gemini-2.5-pro',
-  CLAUDE_OPUS = 'anthropic/claude-opus-4',
+  CLAUDE_OPUS = 'anthropic/claude-opus-4.6',
   O1 = 'openai/o1',
   O3 = 'openai/o3',
   // These aliases are retained for 1.x source compatibility.
   // eslint-disable-next-line @typescript-eslint/no-duplicate-enum-values
   GPT4O_VISION = 'openai/gpt-4o',
   // eslint-disable-next-line @typescript-eslint/no-duplicate-enum-values
-  CLAUDE_SONNET_VISION = 'anthropic/claude-sonnet-4',
+  CLAUDE_SONNET_VISION = 'anthropic/claude-sonnet-4.6',
   // eslint-disable-next-line @typescript-eslint/no-duplicate-enum-values
   GEMINI_FLASH_VISION = 'google/gemini-2.5-flash',
 }

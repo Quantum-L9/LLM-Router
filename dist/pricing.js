@@ -6,7 +6,7 @@ export const MODEL_RATES_PER_1M = {
     [GeneralModel.GPT4O]: { input: 2.5, output: 10 },
     [GeneralModel.CLAUDE_SONNET]: { input: 3, output: 15 },
     [GeneralModel.GEMINI_PRO]: { input: 1.25, output: 10 },
-    [GeneralModel.CLAUDE_OPUS]: { input: 15, output: 75 },
+    [GeneralModel.CLAUDE_OPUS]: { input: 5, output: 25 },
     [GeneralModel.O1]: { input: 15, output: 60 },
     [GeneralModel.O3]: { input: 15, output: 60 },
 };
