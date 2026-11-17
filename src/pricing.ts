@@ -1,6 +1,12 @@
-import { GeneralModel } from './types.js';
-export interface ModelRate { input: number; output: number }
-export interface TokenUsage { prompt_tokens: number; completion_tokens: number }
+import { GeneralModel } from "./types.js";
+export interface ModelRate {
+  input: number;
+  output: number;
+}
+export interface TokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+}
 export const MODEL_RATES_PER_1M: Record<GeneralModel, ModelRate> = {
   [GeneralModel.GPT4O_MINI]: { input: 0.15, output: 0.6 },
   [GeneralModel.GEMINI_FLASH]: { input: 0.15, output: 0.6 },
@@ -12,9 +18,17 @@ export const MODEL_RATES_PER_1M: Record<GeneralModel, ModelRate> = {
   [GeneralModel.O1]: { input: 15, output: 60 },
   [GeneralModel.O3]: { input: 15, output: 60 },
 };
-export function ratePer1KOutput(model: GeneralModel): number { return MODEL_RATES_PER_1M[model].output / 1000; }
+export function ratePer1KOutput(model: GeneralModel): number {
+  return MODEL_RATES_PER_1M[model].output / 1000;
+}
 export function calculateOpenRouterCost(model: GeneralModel, usage?: TokenUsage): number {
   if (!usage) return 0;
   const rates = MODEL_RATES_PER_1M[model];
-  return Math.round(((usage.prompt_tokens / 1_000_000) * rates.input + (usage.completion_tokens / 1_000_000) * rates.output) * 1_000_000) / 1_000_000;
+  return (
+    Math.round(
+      ((usage.prompt_tokens / 1_000_000) * rates.input +
+        (usage.completion_tokens / 1_000_000) * rates.output) *
+        1_000_000,
+    ) / 1_000_000
+  );
 }

@@ -1,36 +1,39 @@
 /** Core public contracts for the legacy L9 router. */
 export enum Provider {
-  OPENROUTER = 'openrouter',
-  PERPLEXITY = 'perplexity',
-  OPENAI_DIRECT = 'openai_direct',
-  ANTHROPIC_DIRECT = 'anthropic_direct',
+  ANTHROPIC_DIRECT = "anthropic_direct",
+  OPENAI_DIRECT = "openai_direct",
+  OPENROUTER = "openrouter",
+  PERPLEXITY = "perplexity",
 }
 
 export enum SonarModel {
-  SONAR = 'sonar',
-  SONAR_PRO = 'sonar-pro',
-  SONAR_REASONING = 'sonar-reasoning',
-  SONAR_REASONING_PRO = 'sonar-reasoning-pro',
-  SONAR_DEEP_RESEARCH = 'sonar-deep-research',
+  SONAR = "sonar",
+  SONAR_DEEP_RESEARCH = "sonar-deep-research",
+  SONAR_PRO = "sonar-pro",
+  SONAR_REASONING = "sonar-reasoning",
+  SONAR_REASONING_PRO = "sonar-reasoning-pro",
 }
 
+/**
+ * The canonical table of OpenRouter model ids: each value is the id sent on the wire.
+ * The `*_VISION` members are aliases retained for 1.x source compatibility.
+ */
 export enum GeneralModel {
-  GPT4O_MINI = 'openai/gpt-4o-mini',
-  GEMINI_FLASH = 'google/gemini-2.5-flash',
-  CLAUDE_HAIKU = 'anthropic/claude-haiku-4.5',
-  GPT4O = 'openai/gpt-4o',
-  CLAUDE_SONNET = 'anthropic/claude-sonnet-4.6',
-  GEMINI_PRO = 'google/gemini-2.5-pro',
-  CLAUDE_OPUS = 'anthropic/claude-opus-4.6',
-  O1 = 'openai/o1',
-  O3 = 'openai/o3',
-  // These aliases are retained for 1.x source compatibility.
+  CLAUDE_HAIKU = "anthropic/claude-haiku-4.5",
+  CLAUDE_OPUS = "anthropic/claude-opus-4.6",
+  CLAUDE_SONNET = "anthropic/claude-sonnet-4.6",
   // eslint-disable-next-line @typescript-eslint/no-duplicate-enum-values
-  GPT4O_VISION = 'openai/gpt-4o',
+  CLAUDE_SONNET_VISION = "anthropic/claude-sonnet-4.6",
+  GEMINI_FLASH = "google/gemini-2.5-flash",
   // eslint-disable-next-line @typescript-eslint/no-duplicate-enum-values
-  CLAUDE_SONNET_VISION = 'anthropic/claude-sonnet-4.6',
+  GEMINI_FLASH_VISION = "google/gemini-2.5-flash",
+  GEMINI_PRO = "google/gemini-2.5-pro",
+  GPT4O = "openai/gpt-4o",
+  GPT4O_MINI = "openai/gpt-4o-mini",
   // eslint-disable-next-line @typescript-eslint/no-duplicate-enum-values
-  GEMINI_FLASH_VISION = 'google/gemini-2.5-flash',
+  GPT4O_VISION = "openai/gpt-4o",
+  O1 = "openai/o1",
+  O3 = "openai/o3",
 }
 
 /**
@@ -39,18 +42,45 @@ export enum GeneralModel {
  * EXPLICIT     — the caller set `TaskDescriptor.requiresSearch` to a boolean.
  * TASK_DEFAULT — the caller left it undefined, so the `TaskType` default applied.
  */
-export enum SearchPolicySource { EXPLICIT = 'explicit', TASK_DEFAULT = 'task_default' }
+export enum SearchPolicySource {
+  EXPLICIT = "explicit",
+  TASK_DEFAULT = "task_default",
+}
 
 export interface SearchPolicyResolution {
   required: boolean;
   source: SearchPolicySource;
 }
 
-export enum SearchContextSize { LOW = 'low', MEDIUM = 'medium', HIGH = 'high' }
-export enum SearchMode { WEB = 'web', ACADEMIC = 'academic', SEC = 'sec' }
-export enum RecencyFilter { HOUR = 'hour', DAY = 'day', WEEK = 'week', MONTH = 'month', YEAR = 'year', NONE = 'none' }
-export enum MessageStrategy { SYSTEM_USER = 'system_user', SYSTEM_USER_ASSISTANT = 'system_user_asst' }
-export enum TaskComplexity { TRIVIAL = 'trivial', LOW = 'low', MEDIUM = 'medium', HIGH = 'high', CRITICAL = 'critical' }
+export enum SearchContextSize {
+  HIGH = "high",
+  LOW = "low",
+  MEDIUM = "medium",
+}
+export enum SearchMode {
+  ACADEMIC = "academic",
+  SEC = "sec",
+  WEB = "web",
+}
+export enum RecencyFilter {
+  DAY = "day",
+  HOUR = "hour",
+  MONTH = "month",
+  NONE = "none",
+  WEEK = "week",
+  YEAR = "year",
+}
+export enum MessageStrategy {
+  SYSTEM_USER = "system_user",
+  SYSTEM_USER_ASSISTANT = "system_user_asst",
+}
+export enum TaskComplexity {
+  CRITICAL = "critical",
+  HIGH = "high",
+  LOW = "low",
+  MEDIUM = "medium",
+  TRIVIAL = "trivial",
+}
 
 export const TASK_COMPLEXITY_RANK: Readonly<Record<TaskComplexity, number>> = Object.freeze({
   [TaskComplexity.TRIVIAL]: 0,
@@ -65,20 +95,20 @@ export function complexityRank(value: TaskComplexity): number {
 }
 
 export enum TaskType {
-  CLASSIFICATION = 'classification',
-  EXTRACTION = 'extraction',
-  SCORING = 'scoring',
-  CONTENT_GENERATION = 'content_generation',
-  STRATEGIC_REASONING = 'strategic_reasoning',
-  CODE_GENERATION = 'code_generation',
-  COMPETITOR_RESEARCH = 'competitor_research',
-  CITATION_CHECK = 'citation_check',
-  FACT_VERIFICATION = 'fact_verification',
-  MARKET_RESEARCH = 'market_research',
-  LINK_PROSPECTING = 'link_prospecting',
-  VISUAL_QA = 'visual_qa',
-  SCREENSHOT_ANALYSIS = 'screenshot_analysis',
-  LAYOUT_VALIDATION = 'layout_validation',
+  CITATION_CHECK = "citation_check",
+  CLASSIFICATION = "classification",
+  CODE_GENERATION = "code_generation",
+  COMPETITOR_RESEARCH = "competitor_research",
+  CONTENT_GENERATION = "content_generation",
+  EXTRACTION = "extraction",
+  FACT_VERIFICATION = "fact_verification",
+  LAYOUT_VALIDATION = "layout_validation",
+  LINK_PROSPECTING = "link_prospecting",
+  MARKET_RESEARCH = "market_research",
+  SCORING = "scoring",
+  SCREENSHOT_ANALYSIS = "screenshot_analysis",
+  STRATEGIC_REASONING = "strategic_reasoning",
+  VISUAL_QA = "visual_qa",
 }
 
 export interface PerplexityConfig {
@@ -91,7 +121,7 @@ export interface PerplexityConfig {
   maxTokens: number;
   domainFilter: string[];
   variations: number;
-  reasoningEffort?: 'low' | 'medium' | 'high';
+  reasoningEffort?: "low" | "medium" | "high";
   disableSearch: boolean;
   estimatedCostPerCall: number;
   resolutionReason: string;
@@ -102,7 +132,7 @@ export interface GeneralModelConfig {
   provider: Provider;
   temperature: number;
   maxTokens: number;
-  responseFormat?: 'json' | 'text';
+  responseFormat?: "json" | "text";
   estimatedCostPerCall: number;
   resolutionReason: string;
 }
@@ -111,7 +141,7 @@ export interface VisionConfig {
   model: GeneralModel;
   provider: Provider;
   maxTokens: number;
-  detail: 'low' | 'high' | 'auto';
+  detail: "low" | "high" | "auto";
   estimatedCostPerCall: number;
   resolutionReason: string;
 }
@@ -125,7 +155,7 @@ export interface TaskDescriptor {
   recency?: RecencyFilter;
   domainFilter?: string[];
   images?: string[];
-  viewport?: 'desktop' | 'mobile';
+  viewport?: "desktop" | "mobile";
   clientId?: string;
   description?: string;
 }
@@ -141,7 +171,7 @@ export interface BudgetState {
   surgeAllowance: boolean;
   remainingMonthly: number;
   remainingWeekly: number;
-  throttleLevel: 'none' | 'soft' | 'hard';
+  throttleLevel: "none" | "soft" | "hard";
   reservedSpend: number;
   activeReservations: number;
 }
@@ -220,7 +250,7 @@ export interface RoutingDecision extends RoutingResolution {
   downgraded?: boolean;
   downgradedFrom?: GeneralModel | SonarModel;
   /** Terminal state of the routed call. Set to SUCCESS on provider completion; FAILED when the call fails after route resolution. */
-  outcome?: 'SUCCESS' | 'FAILED';
+  outcome?: "SUCCESS" | "FAILED";
   /** Classification of a failed routed call. Never carries prompts, keys, or image contents. */
   failureKind?: ProviderFailureKind;
   /** Provider error code, or the error name for local policy failures. */
@@ -229,7 +259,7 @@ export interface RoutingDecision extends RoutingResolution {
 
 export interface CircuitBreakerState {
   provider: Provider;
-  state: 'closed' | 'open' | 'half-open';
+  state: "closed" | "open" | "half-open";
   failureCount: number;
   lastFailure?: Date;
   nextRetryAt?: Date;
@@ -242,14 +272,14 @@ export interface CircuitBreakerConfig {
 }
 
 export type ProviderFailureKind =
-  | 'network'
-  | 'timeout'
-  | 'rate_limit'
-  | 'server'
-  | 'client'
-  | 'cancelled'
-  | 'local'
-  | 'unknown';
+  | "network"
+  | "timeout"
+  | "rate_limit"
+  | "server"
+  | "client"
+  | "cancelled"
+  | "local"
+  | "unknown";
 
 export interface ProviderErrorMetadata {
   provider: Provider;

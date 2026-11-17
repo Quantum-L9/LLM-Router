@@ -1,4 +1,4 @@
-import { GeneralModel } from './types.js';
+import { GeneralModel } from "./types.js";
 export const MODEL_RATES_PER_1M = {
     [GeneralModel.GPT4O_MINI]: { input: 0.15, output: 0.6 },
     [GeneralModel.GEMINI_FLASH]: { input: 0.15, output: 0.6 },
@@ -10,11 +10,15 @@ export const MODEL_RATES_PER_1M = {
     [GeneralModel.O1]: { input: 15, output: 60 },
     [GeneralModel.O3]: { input: 15, output: 60 },
 };
-export function ratePer1KOutput(model) { return MODEL_RATES_PER_1M[model].output / 1000; }
+export function ratePer1KOutput(model) {
+    return MODEL_RATES_PER_1M[model].output / 1000;
+}
 export function calculateOpenRouterCost(model, usage) {
     if (!usage)
         return 0;
     const rates = MODEL_RATES_PER_1M[model];
-    return Math.round(((usage.prompt_tokens / 1_000_000) * rates.input + (usage.completion_tokens / 1_000_000) * rates.output) * 1_000_000) / 1_000_000;
+    return (Math.round(((usage.prompt_tokens / 1_000_000) * rates.input +
+        (usage.completion_tokens / 1_000_000) * rates.output) *
+        1_000_000) / 1_000_000);
 }
 //# sourceMappingURL=pricing.js.map
