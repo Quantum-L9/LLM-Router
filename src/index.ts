@@ -115,9 +115,7 @@ export function getDowngradedModel(
     return original === SonarModel.SONAR_DEEP_RESEARCH ? SonarModel.SONAR_REASONING_PRO : original;
   }
   if (maxTier === "fast") return GeneralModel.GPT4O_MINI;
-  return [GeneralModel.CLAUDE_OPUS, GeneralModel.O1, GeneralModel.O3].includes(
-    original as GeneralModel,
-  )
+  return [GeneralModel.CLAUDE_OPUS, GeneralModel.GEMINI_ARGON].includes(original as GeneralModel)
     ? GeneralModel.CLAUDE_SONNET
     : original;
 }
