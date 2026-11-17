@@ -1,4 +1,9 @@
-import { SearchPolicySource, TaskType, type SearchPolicyResolution, type TaskDescriptor } from '../types.js';
+import {
+  type SearchPolicyResolution,
+  SearchPolicySource,
+  type TaskDescriptor,
+  TaskType,
+} from "../types.js";
 
 /**
  * Task types whose *default* capability implies a search-backed provider.
@@ -60,7 +65,7 @@ export function isSearchTask(type: TaskType): boolean {
  * it distinguishes "the caller asked for this" from "the task type implied it".
  */
 export function resolveSearchPolicy(task: TaskDescriptor): SearchPolicyResolution {
-  if (typeof task.requiresSearch === 'boolean') {
+  if (typeof task.requiresSearch === "boolean") {
     return { required: task.requiresSearch, source: SearchPolicySource.EXPLICIT };
   }
   return { required: isSearchTask(task.type), source: SearchPolicySource.TASK_DEFAULT };
@@ -113,11 +118,11 @@ export function resolveCapabilities(task: TaskDescriptor): ResolvedCapabilities 
  *   CONSENSUS_REQUIRES_SEARCH           — consensus on a non-search route
  */
 export type CapabilityConflictCode =
-  | 'UNSUPPORTED_CAPABILITY_COMBINATION'
-  | 'VISION_INPUT_REQUIRED'
-  | 'IMAGES_NOT_SUPPORTED_FOR_TASK'
-  | 'SEARCH_MODIFIER_WITHOUT_SEARCH'
-  | 'CONSENSUS_REQUIRES_SEARCH';
+  | "UNSUPPORTED_CAPABILITY_COMBINATION"
+  | "VISION_INPUT_REQUIRED"
+  | "IMAGES_NOT_SUPPORTED_FOR_TASK"
+  | "SEARCH_MODIFIER_WITHOUT_SEARCH"
+  | "CONSENSUS_REQUIRES_SEARCH";
 
 /**
  * Fail-closed error for a task that asks for capabilities the router has no
@@ -135,11 +140,15 @@ export class UnsupportedCapabilityCombinationError extends Error {
   public readonly code: CapabilityConflictCode;
   constructor(
     message: string,
-    public readonly requested?: Readonly<{ taskType: TaskType; searchRequired: boolean; imageCount: number }>,
-    code: CapabilityConflictCode = 'UNSUPPORTED_CAPABILITY_COMBINATION',
+    public readonly requested?: Readonly<{
+      taskType: TaskType;
+      searchRequired: boolean;
+      imageCount: number;
+    }>,
+    code: CapabilityConflictCode = "UNSUPPORTED_CAPABILITY_COMBINATION",
   ) {
     super(message);
-    this.name = 'UnsupportedCapabilityCombinationError';
+    this.name = "UnsupportedCapabilityCombinationError";
     this.code = code;
   }
   toJSON(): Record<string, unknown> {
@@ -162,9 +171,16 @@ export class UnsupportedCapabilityCombinationError extends Error {
  * Called inside route resolution before any provider/model selection, so an
  * invalid request can never reserve budget or reach dispatch.
  */
-export function validateCapabilities(capabilities: ResolvedCapabilities, task: TaskDescriptor): void {
+export function validateCapabilities(
+  capabilities: ResolvedCapabilities,
+  task: TaskDescriptor,
+): void {
   if (capabilities.visionRequired && !capabilities.imagesProvided) {
-    throw new UnsupportedCapabilityCombinationError('Visual task requires at least one image', undefined, 'VISION_INPUT_REQUIRED');
+    throw new UnsupportedCapabilityCombinationError(
+      "Visual task requires at least one image",
+      undefined,
+      "VISION_INPUT_REQUIRED",
+    );
   }
   if (capabilities.searchRequired && capabilities.visionRequired) {
     const imageCount = task.images?.length ?? 0;
@@ -174,7 +190,11 @@ export function validateCapabilities(capabilities: ResolvedCapabilities, task: T
     );
   }
   if (capabilities.imagesProvided && !capabilities.visionRequired) {
-    throw new UnsupportedCapabilityCombinationError(`Task ${task.type} does not consume images`, undefined, 'IMAGES_NOT_SUPPORTED_FOR_TASK');
+    throw new UnsupportedCapabilityCombinationError(
+      `Task ${task.type} does not consume images`,
+      undefined,
+      "IMAGES_NOT_SUPPORTED_FOR_TASK",
+    );
   }
 }
 
@@ -191,7 +211,11 @@ export function resolveAndValidateCapabilities(task: TaskDescriptor): ResolvedCa
   validateCapabilities(capabilities, task);
   const hasSearchModifiers = task.recency !== undefined || (task.domainFilter?.length ?? 0) > 0;
   if (!capabilities.searchRequired && hasSearchModifiers) {
-    throw new UnsupportedCapabilityCombinationError('Search modifiers require search capability', undefined, 'SEARCH_MODIFIER_WITHOUT_SEARCH');
+    throw new UnsupportedCapabilityCombinationError(
+      "Search modifiers require search capability",
+      undefined,
+      "SEARCH_MODIFIER_WITHOUT_SEARCH",
+    );
   }
   return capabilities;
 }

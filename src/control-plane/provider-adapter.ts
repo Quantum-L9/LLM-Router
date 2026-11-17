@@ -1,9 +1,9 @@
-import type { LLMRoutePlan } from './contracts.js';
+import type { LLMRoutePlan } from "./contracts.js";
 
 export interface ModelCapability {
   provider: string;
   model: string;
-  modality: 'text' | 'vision' | 'multimodal';
+  modality: "text" | "vision" | "multimodal";
   max_context_tokens: number;
   max_output_tokens: number;
   supports_json_mode: boolean;
@@ -40,7 +40,13 @@ export interface LLMExecutionResult {
   pricing_version: string;
 }
 
-export type AdapterFailureKind = 'network' | 'timeout' | 'rate_limit' | 'server' | 'client' | 'cancelled';
+export type AdapterFailureKind =
+  | "network"
+  | "timeout"
+  | "rate_limit"
+  | "server"
+  | "client"
+  | "cancelled";
 export interface LLMProviderFailure {
   provider: string;
   kind: AdapterFailureKind;
@@ -54,5 +60,9 @@ export interface LLMProviderFailure {
 export interface LLMProviderAdapter {
   readonly provider: string;
   capabilities(): readonly ModelCapability[];
-  execute(plan: LLMRoutePlan, request: LLMRequest, context: Readonly<ExecutionContext>): Promise<LLMExecutionResult>;
+  execute(
+    plan: LLMRoutePlan,
+    request: LLMRequest,
+    context: Readonly<ExecutionContext>,
+  ): Promise<LLMExecutionResult>;
 }

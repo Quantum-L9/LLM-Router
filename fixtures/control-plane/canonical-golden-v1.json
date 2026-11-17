@@ -2,7 +2,7 @@
   "input": {
     "z": 1,
     "a": "é",
-    "nested": {"beta": true, "alpha": null},
+    "nested": { "beta": true, "alpha": null },
     "array": [3, 2, 1]
   },
   "canonical": "{\"a\":\"é\",\"array\":[3,2,1],\"nested\":{\"alpha\":null,\"beta\":true},\"z\":1}",
