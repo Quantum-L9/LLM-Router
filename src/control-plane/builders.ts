@@ -1,38 +1,53 @@
-import type { ZodError, ZodType } from 'zod';
-import { canonicalize, CanonicalJsonError, canonicalJson, compareCodeUnits, sha256Hex } from './canonical-json.js';
+import type { ZodError, ZodType } from "zod";
+import {
+  CanonicalJsonError,
+  canonicalize,
+  canonicalJson,
+  compareCodeUnits,
+  sha256Hex,
+} from "./canonical-json.js";
 import {
   LLM_EXECUTION_RECORD_SCHEMA_VERSION,
   LLM_FEEDBACK_SIGNAL_SCHEMA_VERSION,
   LLM_ROUTE_PLAN_SCHEMA_VERSION,
-  TASK_PROFILE_SCHEMA_VERSION,
-  LLMExecutionRecordSchema,
-  LLMFeedbackSignalSchema,
-  LLMRoutePlanSchema,
-  TaskProfileSchema,
   type LLMExecutionRecord,
   type LLMExecutionRecordInput,
+  LLMExecutionRecordSchema,
   type LLMFeedbackSignal,
   type LLMFeedbackSignalInput,
+  LLMFeedbackSignalSchema,
   type LLMRoutePlan,
   type LLMRoutePlanInput,
+  LLMRoutePlanSchema,
+  TASK_PROFILE_SCHEMA_VERSION,
   type TaskProfile,
   type TaskProfileInput,
-} from './contracts.js';
+  TaskProfileSchema,
+} from "./contracts.js";
 
 function formatControlPlaneIssues(issues: Array<{ path: string; message: string }>): string {
-  return issues.map(issue => `${issue.path || '(root)'}: ${issue.message}`).join('; ');
+  return issues.map((issue) => `${issue.path || "(root)"}: ${issue.message}`).join("; ");
 }
 
 export class ControlPlaneValidationError extends Error {
-  constructor(public readonly artifact: string, public readonly issues: Array<{ path: string; message: string; code: string }>) {
+  constructor(
+    public readonly artifact: string,
+    public readonly issues: Array<{ path: string; message: string; code: string }>,
+  ) {
     super(`Invalid ${artifact}: ${formatControlPlaneIssues(issues)}`);
-    this.name = 'ControlPlaneValidationError';
+    this.name = "ControlPlaneValidationError";
   }
-  toJSON(): Record<string, unknown> { return { name: this.name, message: this.message, artifact: this.artifact, issues: this.issues }; }
+  toJSON(): Record<string, unknown> {
+    return { name: this.name, message: this.message, artifact: this.artifact, issues: this.issues };
+  }
 }
 
 function issuesOf(error: ZodError): Array<{ path: string; message: string; code: string }> {
-  return error.issues.map(issue => ({ path: issue.path.map(String).join('.'), message: issue.message, code: issue.code }));
+  return error.issues.map((issue) => ({
+    path: issue.path.map(String).join("."),
+    message: issue.message,
+    code: issue.code,
+  }));
 }
 
 function parse<T>(schema: ZodType<T>, value: unknown, artifact: string): T {
@@ -46,21 +61,39 @@ function normalizeInput<T>(value: T, artifact: string): T {
     return canonicalize(value) as T;
   } catch (error) {
     if (error instanceof CanonicalJsonError) {
-      throw new ControlPlaneValidationError(artifact, [{ path: '(root)', message: error.message, code: 'canonical_json' }]);
+      throw new ControlPlaneValidationError(artifact, [
+        { path: "(root)", message: error.message, code: "canonical_json" },
+      ]);
     }
     throw error;
   }
 }
 
-function normalizeString(value: string): string { return value.normalize('NFC'); }
-function sortedUniqueStrings(values: string[]): string[] { return [...new Set(values.map(normalizeString))].sort(compareCodeUnits); }
+function normalizeString(value: string): string {
+  return value.normalize("NFC");
+}
+function sortedUniqueStrings(values: string[]): string[] {
+  return [...new Set(values.map(normalizeString))].sort(compareCodeUnits);
+}
 function sortedUniqueTargets<T extends { provider: string; model: string }>(values: T[]): T[] {
-  const normalized = values.map(value => ({ ...value, provider: normalizeString(value.provider), model: normalizeString(value.model) }));
-  return [...new Map(normalized.map(value => [`${value.provider}\u0000${value.model}`, value])).values()].sort((left, right) => left.provider === right.provider ? compareCodeUnits(left.model, right.model) : compareCodeUnits(left.provider, right.provider)) as T[];
+  const normalized = values.map((value) => ({
+    ...value,
+    provider: normalizeString(value.provider),
+    model: normalizeString(value.model),
+  }));
+  return [
+    ...new Map(
+      normalized.map((value) => [`${value.provider}\u0000${value.model}`, value]),
+    ).values(),
+  ].sort((left, right) =>
+    left.provider === right.provider
+      ? compareCodeUnits(left.model, right.model)
+      : compareCodeUnits(left.provider, right.provider),
+  ) as T[];
 }
 
 function deepFreeze<T>(value: T): T {
-  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
     Object.freeze(value);
     for (const entry of Object.values(value as Record<string, unknown>)) deepFreeze(entry);
   }
@@ -68,15 +101,24 @@ function deepFreeze<T>(value: T): T {
 }
 
 export function buildTaskProfile(input: TaskProfileInput): TaskProfile {
-  const normalized = normalizeInput(input, 'TaskProfile');
+  const normalized = normalizeInput(input, "TaskProfile");
   const withoutHash = { schema_version: TASK_PROFILE_SCHEMA_VERSION, ...normalized };
-  return deepFreeze(parse(TaskProfileSchema, { ...withoutHash, task_profile_hash: sha256Hex(withoutHash) }, 'TaskProfile'));
+  return deepFreeze(
+    parse(
+      TaskProfileSchema,
+      { ...withoutHash, task_profile_hash: sha256Hex(withoutHash) },
+      "TaskProfile",
+    ),
+  );
 }
 
 export function verifyTaskProfile(profile: unknown): TaskProfile {
-  const parsed = parse(TaskProfileSchema, profile, 'TaskProfile');
+  const parsed = parse(TaskProfileSchema, profile, "TaskProfile");
   const { task_profile_hash, ...withoutHash } = parsed;
-  if (sha256Hex(withoutHash) !== task_profile_hash) throw new ControlPlaneValidationError('TaskProfile', [{ path: 'task_profile_hash', message: 'hash mismatch', code: 'custom' }]);
+  if (sha256Hex(withoutHash) !== task_profile_hash)
+    throw new ControlPlaneValidationError("TaskProfile", [
+      { path: "task_profile_hash", message: "hash mismatch", code: "custom" },
+    ]);
   return deepFreeze(parsed);
 }
 
@@ -95,20 +137,38 @@ function routeFingerprintPayload(input: LLMRoutePlanInput): Record<string, unkno
 }
 
 export function buildRoutePlan(input: LLMRoutePlanInput): LLMRoutePlan {
-  const normalized = normalizeInput({
-    ...input,
-    fallback_chain: sortedUniqueTargets(input.fallback_chain),
-    policy_decision: { ...input.policy_decision, applied_rules: sortedUniqueStrings(input.policy_decision.applied_rules), blockers: sortedUniqueStrings(input.policy_decision.blockers) },
-    learned_candidate_refs: sortedUniqueStrings(input.learned_candidate_refs),
-  }, 'LLMRoutePlan');
+  const normalized = normalizeInput(
+    {
+      ...input,
+      fallback_chain: sortedUniqueTargets(input.fallback_chain),
+      policy_decision: {
+        ...input.policy_decision,
+        applied_rules: sortedUniqueStrings(input.policy_decision.applied_rules),
+        blockers: sortedUniqueStrings(input.policy_decision.blockers),
+      },
+      learned_candidate_refs: sortedUniqueStrings(input.learned_candidate_refs),
+    },
+    "LLMRoutePlan",
+  );
   const route_fingerprint = `route_${sha256Hex(routeFingerprintPayload(normalized)).slice(0, 32)}`;
   const plan_id = `plan_${sha256Hex({ request_id: normalized.request_id, route_fingerprint }).slice(0, 32)}`;
-  const withoutHash = { schema_version: LLM_ROUTE_PLAN_SCHEMA_VERSION, route_fingerprint, plan_id, ...normalized };
-  return deepFreeze(parse(LLMRoutePlanSchema, { ...withoutHash, content_hash: sha256Hex(withoutHash) }, 'LLMRoutePlan'));
+  const withoutHash = {
+    schema_version: LLM_ROUTE_PLAN_SCHEMA_VERSION,
+    route_fingerprint,
+    plan_id,
+    ...normalized,
+  };
+  return deepFreeze(
+    parse(
+      LLMRoutePlanSchema,
+      { ...withoutHash, content_hash: sha256Hex(withoutHash) },
+      "LLMRoutePlan",
+    ),
+  );
 }
 
 export function verifyRoutePlan(plan: unknown): LLMRoutePlan {
-  const parsed = parse(LLMRoutePlanSchema, plan, 'LLMRoutePlan');
+  const parsed = parse(LLMRoutePlanSchema, plan, "LLMRoutePlan");
   const { content_hash, route_fingerprint, plan_id } = parsed;
   const input: LLMRoutePlanInput = {
     request_id: parsed.request_id,
@@ -132,37 +192,67 @@ export function verifyRoutePlan(plan: unknown): LLMRoutePlan {
     ...input,
   };
   const issues: Array<{ path: string; message: string; code: string }> = [];
-  if (route_fingerprint !== expectedFingerprint) issues.push({ path: 'route_fingerprint', message: 'fingerprint mismatch', code: 'custom' });
-  if (plan_id !== expectedPlanId) issues.push({ path: 'plan_id', message: 'plan identity mismatch', code: 'custom' });
-  if (content_hash !== sha256Hex(withoutHash)) issues.push({ path: 'content_hash', message: 'hash mismatch', code: 'custom' });
-  if (issues.length > 0) throw new ControlPlaneValidationError('LLMRoutePlan', issues);
+  if (route_fingerprint !== expectedFingerprint)
+    issues.push({ path: "route_fingerprint", message: "fingerprint mismatch", code: "custom" });
+  if (plan_id !== expectedPlanId)
+    issues.push({ path: "plan_id", message: "plan identity mismatch", code: "custom" });
+  if (content_hash !== sha256Hex(withoutHash))
+    issues.push({ path: "content_hash", message: "hash mismatch", code: "custom" });
+  if (issues.length > 0) throw new ControlPlaneValidationError("LLMRoutePlan", issues);
   return deepFreeze(parsed);
 }
 
 export function buildExecutionRecord(input: LLMExecutionRecordInput): LLMExecutionRecord {
-  const normalized = normalizeInput(input, 'LLMExecutionRecord');
+  const normalized = normalizeInput(input, "LLMExecutionRecord");
   const withoutHash = { schema_version: LLM_EXECUTION_RECORD_SCHEMA_VERSION, ...normalized };
-  return deepFreeze(parse(LLMExecutionRecordSchema, { ...withoutHash, content_hash: sha256Hex(withoutHash) }, 'LLMExecutionRecord'));
+  return deepFreeze(
+    parse(
+      LLMExecutionRecordSchema,
+      { ...withoutHash, content_hash: sha256Hex(withoutHash) },
+      "LLMExecutionRecord",
+    ),
+  );
 }
 
 export function verifyExecutionRecord(record: unknown): LLMExecutionRecord {
-  const parsed = parse(LLMExecutionRecordSchema, record, 'LLMExecutionRecord');
+  const parsed = parse(LLMExecutionRecordSchema, record, "LLMExecutionRecord");
   const { content_hash, ...withoutHash } = parsed;
-  if (content_hash !== sha256Hex(withoutHash)) throw new ControlPlaneValidationError('LLMExecutionRecord', [{ path: 'content_hash', message: 'hash mismatch', code: 'custom' }]);
+  if (content_hash !== sha256Hex(withoutHash))
+    throw new ControlPlaneValidationError("LLMExecutionRecord", [
+      { path: "content_hash", message: "hash mismatch", code: "custom" },
+    ]);
   return deepFreeze(parsed);
 }
 
 export function buildFeedbackSignal(input: LLMFeedbackSignalInput): LLMFeedbackSignal {
-  const normalized = normalizeInput({ ...input, evidence_refs: sortedUniqueStrings(input.evidence_refs) }, 'LLMFeedbackSignal');
-  const withoutHash = { schema_version: LLM_FEEDBACK_SIGNAL_SCHEMA_VERSION, signal_family: 'llm_routing' as const, ...normalized };
-  return deepFreeze(parse(LLMFeedbackSignalSchema, { ...withoutHash, content_hash: sha256Hex(withoutHash) }, 'LLMFeedbackSignal'));
+  const normalized = normalizeInput(
+    { ...input, evidence_refs: sortedUniqueStrings(input.evidence_refs) },
+    "LLMFeedbackSignal",
+  );
+  const withoutHash = {
+    schema_version: LLM_FEEDBACK_SIGNAL_SCHEMA_VERSION,
+    signal_family: "llm_routing" as const,
+    ...normalized,
+  };
+  return deepFreeze(
+    parse(
+      LLMFeedbackSignalSchema,
+      { ...withoutHash, content_hash: sha256Hex(withoutHash) },
+      "LLMFeedbackSignal",
+    ),
+  );
 }
 
 export function verifyFeedbackSignal(signal: unknown): LLMFeedbackSignal {
-  const parsed = parse(LLMFeedbackSignalSchema, signal, 'LLMFeedbackSignal');
+  const parsed = parse(LLMFeedbackSignalSchema, signal, "LLMFeedbackSignal");
   const { content_hash, ...withoutHash } = parsed;
-  if (content_hash !== sha256Hex(withoutHash)) throw new ControlPlaneValidationError('LLMFeedbackSignal', [{ path: 'content_hash', message: 'hash mismatch', code: 'custom' }]);
+  if (content_hash !== sha256Hex(withoutHash))
+    throw new ControlPlaneValidationError("LLMFeedbackSignal", [
+      { path: "content_hash", message: "hash mismatch", code: "custom" },
+    ]);
   return deepFreeze(parsed);
 }
 
-export function canonicalBytes(value: unknown): Uint8Array { return new TextEncoder().encode(canonicalJson(value)); }
+export function canonicalBytes(value: unknown): Uint8Array {
+  return new TextEncoder().encode(canonicalJson(value));
+}

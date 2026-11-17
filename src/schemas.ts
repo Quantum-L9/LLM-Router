@@ -1,11 +1,11 @@
-import { z } from 'zod';
+import { z } from "zod";
 import {
   RecencyFilter,
-  TaskComplexity,
-  TaskType,
   type RouterConfig,
+  TaskComplexity,
   type TaskDescriptor,
-} from './types.js';
+  TaskType,
+} from "./types.js";
 
 export const TaskDescriptorSchema = z.object({
   type: z.nativeEnum(TaskType),
@@ -16,73 +16,107 @@ export const TaskDescriptorSchema = z.object({
   recency: z.nativeEnum(RecencyFilter).optional(),
   domainFilter: z.array(z.string().min(1)).optional(),
   images: z.array(z.string().min(1)).optional(),
-  viewport: z.enum(['desktop', 'mobile']).optional(),
+  viewport: z.enum(["desktop", "mobile"]).optional(),
   clientId: z.string().min(1).optional(),
   description: z.string().optional(),
 });
 
 export const ExecutableTaskDescriptorSchema = TaskDescriptorSchema.extend({
-  clientId: z.string().min(1, 'clientId is required for budget tracking'),
+  clientId: z.string().min(1, "clientId is required for budget tracking"),
 });
 export type ExecutableTaskDescriptor = z.infer<typeof ExecutableTaskDescriptorSchema>;
 
-const BudgetConfigPartialSchema = z.object({
-  monthlyBudgetPerClient: z.number().positive(),
-  weeklyTarget: z.number().positive(),
-  weeklyHardCeiling: z.number().positive(),
-  globalMonthlyHardCeiling: z.number().positive(),
-  surgeThreshold: z.number().min(0).max(1),
-}).partial();
+const BudgetConfigPartialSchema = z
+  .object({
+    monthlyBudgetPerClient: z.number().positive(),
+    weeklyTarget: z.number().positive(),
+    weeklyHardCeiling: z.number().positive(),
+    globalMonthlyHardCeiling: z.number().positive(),
+    surgeThreshold: z.number().min(0).max(1),
+  })
+  .partial();
 
-const CircuitBreakerConfigPartialSchema = z.object({
-  failureThreshold: z.number().int().positive(),
-  openDurationMs: z.number().int().positive(),
-}).partial();
+const CircuitBreakerConfigPartialSchema = z
+  .object({
+    failureThreshold: z.number().int().positive(),
+    openDurationMs: z.number().int().positive(),
+  })
+  .partial();
 
 export const RouterConfigSchema = z.object({
-  perplexityApiKey: z.string().min(1, 'perplexityApiKey is required'),
-  openrouterApiKey: z.string().min(1, 'openrouterApiKey is required'),
-  openrouterBaseUrl: z.string().url('openrouterBaseUrl must be an absolute URL').refine(
-    (value) => {
-      try {
-        const protocol = new URL(value).protocol;
-        return protocol === 'https:' || protocol === 'http:';
-      } catch {
-        return false;
-      }
-    },
-    { message: 'openrouterBaseUrl must use http(s)' },
-  ).optional(),
+  perplexityApiKey: z.string().min(1, "perplexityApiKey is required"),
+  openrouterApiKey: z.string().min(1, "openrouterApiKey is required"),
+  openrouterBaseUrl: z
+    .string()
+    .url("openrouterBaseUrl must be an absolute URL")
+    .refine(
+      (value) => {
+        try {
+          const protocol = new URL(value).protocol;
+          return protocol === "https:" || protocol === "http:";
+        } catch {
+          return false;
+        }
+      },
+      { message: "openrouterBaseUrl must use http(s)" },
+    )
+    .optional(),
   appName: z.string().min(1).optional(),
   budget: BudgetConfigPartialSchema.optional(),
   circuitBreaker: CircuitBreakerConfigPartialSchema.optional(),
   providerTimeoutMs: z.number().int().positive().optional(),
-  providerMaxRetries: z.number().int().refine(value => value === 0, {
-    message: 'providerMaxRetries must remain 0 so attempts stay explicit',
-  }).optional(),
+  providerMaxRetries: z
+    .number()
+    .int()
+    .refine((value) => value === 0, {
+      message: "providerMaxRetries must remain 0 so attempts stay explicit",
+    })
+    .optional(),
 });
 
-interface PublicIssue { path: Array<string | number>; message: string; code: string }
+interface PublicIssue {
+  path: Array<string | number>;
+  message: string;
+  code: string;
+}
 function publicIssues(error: z.ZodError): PublicIssue[] {
-  return error.issues.map(issue => ({
-    path: issue.path.map(segment => typeof segment === 'symbol' ? String(segment) : segment),
+  return error.issues.map((issue) => ({
+    path: issue.path.map((segment) => (typeof segment === "symbol" ? String(segment) : segment)),
     message: issue.message,
     code: issue.code,
   }));
 }
 
 function formatIssues(issues: PublicIssue[]): string {
-  return issues.map(issue => `${issue.path.map(String).join('.') || '(root)'}: ${issue.message}`).join('; ');
+  return issues
+    .map((issue) => `${issue.path.map(String).join(".") || "(root)"}: ${issue.message}`)
+    .join("; ");
 }
 
 export class TaskValidationError extends Error {
-  constructor(message: string, public readonly issues: PublicIssue[]) { super(message); this.name = 'TaskValidationError'; }
-  toJSON(): Record<string, unknown> { return { name: this.name, message: this.message, issues: this.issues }; }
+  constructor(
+    message: string,
+    public readonly issues: PublicIssue[],
+  ) {
+    super(message);
+    this.name = "TaskValidationError";
+  }
+  toJSON(): Record<string, unknown> {
+    return { name: this.name, message: this.message, issues: this.issues };
+  }
 }
 
 export class RouterConfigValidationError extends Error {
-  constructor(message: string, public readonly issues: PublicIssue[]) { super(message); this.name = 'RouterConfigValidationError'; }
-  toJSON(): Record<string, unknown> { return { name: this.name, message: this.message, issues: this.issues }; }
+  constructor(
+    message: string,
+    public readonly issues: PublicIssue[],
+  ) {
+    super(message);
+    this.name = "RouterConfigValidationError";
+  }
+  toJSON(): Record<string, unknown> {
+    return { name: this.name, message: this.message, issues: this.issues };
+  }
 }
 
 function parseTaskWithSchema<T>(schema: z.ZodType<T>, task: unknown): T {

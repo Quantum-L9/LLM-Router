@@ -1,19 +1,21 @@
 import {
+  complexityRank,
   MessageStrategy,
+  type PerplexityConfig,
   RecencyFilter,
   SearchContextSize,
   SearchMode,
   SonarModel,
   TaskComplexity,
-  TaskType,
-  complexityRank,
-  type PerplexityConfig,
   type TaskDescriptor,
-} from '../types.js';
+  TaskType,
+} from "../types.js";
+
 // Re-exported for backward compatibility: `isSearchTask` historically lived in
 // this module. Its canonical home is now ./search-policy.ts.
-export { isSearchTask } from './search-policy.js';
-import { resolveSearchPolicy } from './search-policy.js';
+export { isSearchTask } from "./search-policy.js";
+
+import { resolveSearchPolicy } from "./search-policy.js";
 
 function selectSonarModel(complexity: TaskComplexity, rank: number): SonarModel {
   if (complexity === TaskComplexity.CRITICAL) return SonarModel.SONAR_DEEP_RESEARCH;
@@ -33,9 +35,12 @@ function selectVariations(complexity: TaskComplexity, rank: number): number {
   return rank >= complexityRank(TaskComplexity.HIGH) ? 3 : 1;
 }
 
-function selectReasoningEffort(model: SonarModel, complexity: TaskComplexity): 'high' | 'medium' | undefined {
+function selectReasoningEffort(
+  model: SonarModel,
+  complexity: TaskComplexity,
+): "high" | "medium" | undefined {
   if (model !== SonarModel.SONAR_REASONING_PRO) return undefined;
-  return complexity === TaskComplexity.CRITICAL ? 'high' : 'medium';
+  return complexity === TaskComplexity.CRITICAL ? "high" : "medium";
 }
 
 export function resolvePerplexityConfig(task: TaskDescriptor): PerplexityConfig {
@@ -43,20 +48,29 @@ export function resolvePerplexityConfig(task: TaskDescriptor): PerplexityConfig 
   // only ever produced for a route that resolved to search. A non-search task
   // reaching this resolver is a contract violation, not a configurable state.
   if (!resolveSearchPolicy(task).required) {
-    throw new Error('resolvePerplexityConfig called for a non-search task');
+    throw new Error("resolvePerplexityConfig called for a non-search task");
   }
   const rank = complexityRank(task.complexity);
   const model = selectSonarModel(task.complexity, rank);
   const searchContextSize = selectSearchContextSize(rank);
-  const maxTokens = task.expectedOutputTokens ?? (task.complexity === TaskComplexity.CRITICAL ? 4096 : 2048);
+  const maxTokens =
+    task.expectedOutputTokens ?? (task.complexity === TaskComplexity.CRITICAL ? 4096 : 2048);
   const variations = selectVariations(task.complexity, rank);
-  const estimatedCostPerCall = Math.round(maxTokens * variations * (model === SonarModel.SONAR ? 0.000001 : 0.000004) * 100000) / 100000;
+  const estimatedCostPerCall =
+    Math.round(
+      maxTokens * variations * (model === SonarModel.SONAR ? 0.000001 : 0.000004) * 100000,
+    ) / 100000;
   return {
     model,
     searchContextSize,
     searchMode: SearchMode.WEB,
-    recencyFilter: task.recency ?? (task.type === TaskType.COMPETITOR_RESEARCH ? RecencyFilter.WEEK : RecencyFilter.NONE),
-    messageStrategy: task.requiresReasoning || rank >= complexityRank(TaskComplexity.HIGH) ? MessageStrategy.SYSTEM_USER_ASSISTANT : MessageStrategy.SYSTEM_USER,
+    recencyFilter:
+      task.recency ??
+      (task.type === TaskType.COMPETITOR_RESEARCH ? RecencyFilter.WEEK : RecencyFilter.NONE),
+    messageStrategy:
+      task.requiresReasoning || rank >= complexityRank(TaskComplexity.HIGH)
+        ? MessageStrategy.SYSTEM_USER_ASSISTANT
+        : MessageStrategy.SYSTEM_USER,
     temperature: task.type === TaskType.CONTENT_GENERATION ? 0.7 : 0.2,
     maxTokens,
     domainFilter: task.domainFilter ?? [],

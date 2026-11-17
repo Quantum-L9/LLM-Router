@@ -1,31 +1,30 @@
-import { calculateOpenRouterCost } from '../pricing.js';
-import { classifyProviderError, ProviderRequestError, throwIfAborted } from '../provider-errors.js';
+import { calculateOpenRouterCost } from "../pricing.js";
+import { classifyProviderError, ProviderRequestError, throwIfAborted } from "../provider-errors.js";
 import {
-  Provider,
   type GeneralModel,
   type GeneralModelConfig,
+  GeneralModel as GeneralModelValue,
   type LLMResponse,
+  Provider,
   type VisionConfig,
-} from '../types.js';
+} from "../types.js";
 import {
-  OpenAIChatTransport,
+  type ChatCompletionResult,
   type ChatContentPart,
   type ChatMessage,
   type ChatTransport,
-} from './openai-transport.js';
-import { GeneralModel as GeneralModelValue } from '../types.js';
+  OpenAIChatTransport,
+} from "./openai-transport.js";
 
-const MODEL_IDS: Record<GeneralModel, string> = {
-  [GeneralModelValue.GPT4O_MINI]: 'openai/gpt-4o-mini',
-  [GeneralModelValue.GEMINI_FLASH]: 'google/gemini-2.5-flash',
-  [GeneralModelValue.CLAUDE_HAIKU]: 'anthropic/claude-haiku-4.5',
-  [GeneralModelValue.GPT4O]: 'openai/gpt-4o',
-  [GeneralModelValue.CLAUDE_SONNET]: 'anthropic/claude-sonnet-4',
-  [GeneralModelValue.GEMINI_PRO]: 'google/gemini-2.5-pro',
-  [GeneralModelValue.CLAUDE_OPUS]: 'anthropic/claude-opus-4',
-  [GeneralModelValue.O1]: 'openai/o1',
-  [GeneralModelValue.O3]: 'openai/o3',
-};
+// `GeneralModel` (src/types.ts) is the one canonical table of OpenRouter model
+// ids: each enum value is the id sent on the wire. This map is derived from it so
+// that an id can never be written down twice and drift (tests/model-id-canonical.test.ts).
+const MODEL_IDS: Readonly<Record<GeneralModel, string>> = Object.freeze(
+  Object.fromEntries(Object.values(GeneralModelValue).map((id) => [id, id])) as Record<
+    GeneralModel,
+    string
+  >,
+);
 
 const MAX_INLINE_IMAGE_BYTES = 10 * 1024 * 1024;
 // The `i` flag makes the scheme and the base64 payload case-insensitive, so the
@@ -33,12 +32,22 @@ const MAX_INLINE_IMAGE_BYTES = 10 * 1024 * 1024;
 const SAFE_DATA_URI = /^data:image\/(png|jpeg|webp|gif);base64,([A-Z0-9+/=]+)$/i;
 
 function isPrivateIpv4(hostname: string): boolean {
-  const parts = hostname.split('.');
-  if (parts.length !== 4 || parts.some(part => !/^\d{1,3}$/.test(part))) return false;
+  const parts = hostname.split(".");
+  if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part))) return false;
   const values = parts.map(Number);
-  if (values.some(value => value < 0 || value > 255)) return false;
+  if (values.some((value) => value < 0 || value > 255)) return false;
   const [a, b] = values;
-  return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 198 && (b === 18 || b === 19)) || a >= 224;
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    a >= 224
+  );
 }
 
 function mappedIpv4FromIpv6(hostname: string): string | undefined {
@@ -53,12 +62,12 @@ function mappedIpv4FromIpv6(hostname: string): string | undefined {
 }
 
 function isPrivateIpv6(hostname: string): boolean {
-  const normalized = hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  if (!normalized.includes(':')) return false;
-  if (normalized === '::' || normalized === '::1') return true;
+  const normalized = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (!normalized.includes(":")) return false;
+  if (normalized === "::" || normalized === "::1") return true;
   const mapped = mappedIpv4FromIpv6(normalized);
   if (mapped) return isPrivateIpv4(mapped);
-  const firstText = normalized.split(':').find(Boolean);
+  const firstText = normalized.split(":").find(Boolean);
   if (!firstText) return true;
   const first = Number.parseInt(firstText, 16);
   if (!Number.isFinite(first)) return true;
@@ -66,38 +75,85 @@ function isPrivateIpv6(hostname: string): boolean {
 }
 
 export class UnsafeImageUrlError extends Error {
-  constructor(message: string, public readonly url: string) { super(message); this.name = 'UnsafeImageUrlError'; }
-  toJSON(): Record<string, unknown> { return { name: this.name, message: this.message }; }
+  constructor(
+    message: string,
+    public readonly url: string,
+  ) {
+    super(message);
+    this.name = "UnsafeImageUrlError";
+  }
+  toJSON(): Record<string, unknown> {
+    return { name: this.name, message: this.message };
+  }
 }
 
 export function validateImageUrl(url: string): void {
-  if (url.startsWith('data:')) {
+  if (url.startsWith("data:")) {
     const match = SAFE_DATA_URI.exec(url);
-    if (!match) throw new UnsafeImageUrlError('Image data URI must be a supported base64 image', url);
-    if (Math.floor(match[2].length * 3 / 4) > MAX_INLINE_IMAGE_BYTES) throw new UnsafeImageUrlError('Inline image exceeds the 10 MiB limit', url);
+    if (!match)
+      throw new UnsafeImageUrlError("Image data URI must be a supported base64 image", url);
+    if (Math.floor((match[2].length * 3) / 4) > MAX_INLINE_IMAGE_BYTES)
+      throw new UnsafeImageUrlError("Inline image exceeds the 10 MiB limit", url);
     return;
   }
   let parsed: URL;
-  try { parsed = new URL(url); } catch { throw new UnsafeImageUrlError('Image URL must be absolute', url); }
-  if (parsed.protocol !== 'https:') throw new UnsafeImageUrlError('Image URL must use HTTPS', url);
-  const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal') || isPrivateIpv4(host) || isPrivateIpv6(host)) throw new UnsafeImageUrlError('Image URL targets a private, loopback, link-local, or reserved address', url);
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new UnsafeImageUrlError("Image URL must be absolute", url);
+  }
+  if (parsed.protocol !== "https:") throw new UnsafeImageUrlError("Image URL must use HTTPS", url);
+  const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (
+    host === "localhost" ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal") ||
+    isPrivateIpv4(host) ||
+    isPrivateIpv6(host)
+  )
+    throw new UnsafeImageUrlError(
+      "Image URL targets a private, loopback, link-local, or reserved address",
+      url,
+    );
 }
 
 export interface OpenRouterClientLike {
-  complete(config: GeneralModelConfig, systemPrompt: string, userPrompt: string, signal?: AbortSignal): Promise<LLMResponse>;
-  completeWithVision(config: VisionConfig, systemPrompt: string, userPrompt: string, imageUrls: string[], signal?: AbortSignal): Promise<LLMResponse>;
-  completeWithFallback(config: GeneralModelConfig, fallbacks: GeneralModel[], systemPrompt: string, userPrompt: string, signal?: AbortSignal): Promise<LLMResponse>;
+  complete(
+    config: GeneralModelConfig,
+    systemPrompt: string,
+    userPrompt: string,
+    signal?: AbortSignal,
+  ): Promise<LLMResponse>;
+  completeWithVision(
+    config: VisionConfig,
+    systemPrompt: string,
+    userPrompt: string,
+    imageUrls: string[],
+    signal?: AbortSignal,
+  ): Promise<LLMResponse>;
+  completeWithFallback(
+    config: GeneralModelConfig,
+    fallbacks: GeneralModel[],
+    systemPrompt: string,
+    userPrompt: string,
+    signal?: AbortSignal,
+  ): Promise<LLMResponse>;
 }
 
-export const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+export const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 export class InvalidBaseUrlError extends Error {
-  constructor(message: string, public readonly url: string, public readonly source: 'config' | 'env') {
+  constructor(
+    message: string,
+    public readonly url: string,
+    public readonly source: "config" | "env",
+  ) {
     super(message);
-    this.name = 'InvalidBaseUrlError';
+    this.name = "InvalidBaseUrlError";
   }
-  toJSON(): Record<string, unknown> { return { name: this.name, message: this.message, source: this.source }; }
+  toJSON(): Record<string, unknown> {
+    return { name: this.name, message: this.message, source: this.source };
+  }
 }
 
 /**
@@ -109,68 +165,180 @@ export class InvalidBaseUrlError extends Error {
  * predictable. The default is returned untouched, keeping existing
  * deployments byte-for-byte identical in behavior.
  */
-export function resolveOpenRouterBaseUrl(configured?: string, env: Record<string, string | undefined> = process.env): string {
-  const candidate = configured !== undefined
-    ? { value: configured, source: 'config' as const }
-    : env.OPENROUTER_BASE_URL !== undefined && env.OPENROUTER_BASE_URL.trim() !== ''
-      ? { value: env.OPENROUTER_BASE_URL, source: 'env' as const }
-      : undefined;
+export function resolveOpenRouterBaseUrl(
+  configured?: string,
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const candidate =
+    configured !== undefined
+      ? { value: configured, source: "config" as const }
+      : env.OPENROUTER_BASE_URL !== undefined && env.OPENROUTER_BASE_URL.trim() !== ""
+        ? { value: env.OPENROUTER_BASE_URL, source: "env" as const }
+        : undefined;
   if (candidate === undefined) return DEFAULT_OPENROUTER_BASE_URL;
   const trimmed = candidate.value.trim();
   let parsed: URL;
-  try { parsed = new URL(trimmed); } catch {
-    throw new InvalidBaseUrlError(`OpenRouter base URL from ${candidate.source} must be an absolute URL`, trimmed, candidate.source);
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new InvalidBaseUrlError(
+      `OpenRouter base URL from ${candidate.source} must be an absolute URL`,
+      trimmed,
+      candidate.source,
+    );
   }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    throw new InvalidBaseUrlError(`OpenRouter base URL from ${candidate.source} must use http(s), got ${parsed.protocol}`, trimmed, candidate.source);
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new InvalidBaseUrlError(
+      `OpenRouter base URL from ${candidate.source} must use http(s), got ${parsed.protocol}`,
+      trimmed,
+      candidate.source,
+    );
   }
-  return trimmed.replace(/\/+$/, '');
+  return stripTrailingSlashes(trimmed);
+}
+
+/**
+ * Remove trailing "/" characters in linear time. Replaces `/\/+$/`, which
+ * CodeQL flags (js/polynomial-redos) on caller-supplied URLs.
+ */
+function stripTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end--;
+  return value.slice(0, end);
+}
+
+/** Map one chat-completion result to the router's response shape. */
+function toLlmResponse(
+  model: GeneralModel,
+  response: ChatCompletionResult,
+  started: number,
+): LLMResponse {
+  return {
+    content: response.choices[0]?.message?.content ?? "",
+    model,
+    provider: Provider.OPENROUTER,
+    inputTokens: response.usage?.prompt_tokens ?? 0,
+    outputTokens: response.usage?.completion_tokens ?? 0,
+    totalTokens: response.usage?.total_tokens ?? 0,
+    cost: calculateOpenRouterCost(model, response.usage),
+    latencyMs: Date.now() - started,
+    cached: false,
+    requestId: response._request_id ?? response.id,
+    finishReason: response.choices[0]?.finish_reason ?? undefined,
+  };
 }
 
 export class OpenRouterClient implements OpenRouterClientLike {
   private readonly transport: ChatTransport;
-  constructor(apiKey: string, appName = 'L9-LLM-Router', timeoutMs = 60_000, transport?: ChatTransport, baseUrl?: string) {
-    this.transport = transport ?? new OpenAIChatTransport({ apiKey, baseURL: resolveOpenRouterBaseUrl(baseUrl), timeoutMs, maxRetries: 0, defaultHeaders: { 'HTTP-Referer': 'https://l9.systems', 'X-Title': appName } });
+  constructor(
+    apiKey: string,
+    appName = "L9-LLM-Router",
+    timeoutMs = 60_000,
+    transport?: ChatTransport,
+    baseUrl?: string,
+  ) {
+    this.transport =
+      transport ??
+      new OpenAIChatTransport({
+        apiKey,
+        baseURL: resolveOpenRouterBaseUrl(baseUrl),
+        timeoutMs,
+        maxRetries: 0,
+        defaultHeaders: { "HTTP-Referer": "https://l9.systems", "X-Title": appName },
+      });
   }
 
-  async complete(config: GeneralModelConfig, systemPrompt: string, userPrompt: string, signal?: AbortSignal): Promise<LLMResponse> {
+  async complete(
+    config: GeneralModelConfig,
+    systemPrompt: string,
+    userPrompt: string,
+    signal?: AbortSignal,
+  ): Promise<LLMResponse> {
     throwIfAborted(signal, Provider.OPENROUTER);
     const started = Date.now();
-    const messages: ChatMessage[] = [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }];
+    const messages: ChatMessage[] = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ];
     try {
-      const response = await this.transport.create({ model: MODEL_IDS[config.model], messages, temperature: config.temperature, max_tokens: config.maxTokens, ...(config.responseFormat === 'json' ? { response_format: { type: 'json_object' as const } } : {}) }, { signal });
-      return { content: response.choices[0]?.message?.content ?? '', model: config.model, provider: Provider.OPENROUTER, inputTokens: response.usage?.prompt_tokens ?? 0, outputTokens: response.usage?.completion_tokens ?? 0, totalTokens: response.usage?.total_tokens ?? 0, cost: calculateOpenRouterCost(config.model, response.usage), latencyMs: Date.now() - started, cached: false, requestId: response._request_id ?? response.id, finishReason: response.choices[0]?.finish_reason ?? undefined };
-    } catch (error) { throw classifyProviderError(error, Provider.OPENROUTER); }
+      const response = await this.transport.create(
+        {
+          model: MODEL_IDS[config.model],
+          messages,
+          temperature: config.temperature,
+          max_tokens: config.maxTokens,
+          ...(config.responseFormat === "json"
+            ? { response_format: { type: "json_object" as const } }
+            : {}),
+        },
+        { signal },
+      );
+      return toLlmResponse(config.model, response, started);
+    } catch (error) {
+      throw classifyProviderError(error, Provider.OPENROUTER);
+    }
   }
 
-  async completeWithVision(config: VisionConfig, systemPrompt: string, userPrompt: string, imageUrls: string[], signal?: AbortSignal): Promise<LLMResponse> {
+  async completeWithVision(
+    config: VisionConfig,
+    systemPrompt: string,
+    userPrompt: string,
+    imageUrls: string[],
+    signal?: AbortSignal,
+  ): Promise<LLMResponse> {
     throwIfAborted(signal, Provider.OPENROUTER);
     for (const url of imageUrls) validateImageUrl(url);
     const started = Date.now();
-    const content: ChatContentPart[] = [{ type: 'text', text: userPrompt }, ...imageUrls.map(url => ({ type: 'image_url' as const, image_url: { url, detail: config.detail } }))];
+    const content: ChatContentPart[] = [
+      { type: "text", text: userPrompt },
+      ...imageUrls.map((url) => ({
+        type: "image_url" as const,
+        image_url: { url, detail: config.detail },
+      })),
+    ];
     try {
-      const response = await this.transport.create({ model: MODEL_IDS[config.model], messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content }], temperature: 0.2, max_tokens: config.maxTokens }, { signal });
-      return { content: response.choices[0]?.message?.content ?? '', model: config.model, provider: Provider.OPENROUTER, inputTokens: response.usage?.prompt_tokens ?? 0, outputTokens: response.usage?.completion_tokens ?? 0, totalTokens: response.usage?.total_tokens ?? 0, cost: calculateOpenRouterCost(config.model, response.usage), latencyMs: Date.now() - started, cached: false, requestId: response._request_id ?? response.id, finishReason: response.choices[0]?.finish_reason ?? undefined };
-    } catch (error) { throw classifyProviderError(error, Provider.OPENROUTER); }
+      const response = await this.transport.create(
+        {
+          model: MODEL_IDS[config.model],
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content },
+          ],
+          temperature: 0.2,
+          max_tokens: config.maxTokens,
+        },
+        { signal },
+      );
+      return toLlmResponse(config.model, response, started);
+    } catch (error) {
+      throw classifyProviderError(error, Provider.OPENROUTER);
+    }
   }
 
-  async completeWithFallback(config: GeneralModelConfig, fallbacks: GeneralModel[], systemPrompt: string, userPrompt: string, signal?: AbortSignal): Promise<LLMResponse> {
+  async completeWithFallback(
+    config: GeneralModelConfig,
+    fallbacks: GeneralModel[],
+    systemPrompt: string,
+    userPrompt: string,
+    signal?: AbortSignal,
+  ): Promise<LLMResponse> {
     const attempts = [...new Set([config.model, ...fallbacks])];
     const errors: ProviderRequestError[] = [];
     for (const model of attempts) {
       throwIfAborted(signal, Provider.OPENROUTER);
-      try { return await this.complete({ ...config, model }, systemPrompt, userPrompt, signal); }
-      catch (error) {
+      try {
+        return await this.complete({ ...config, model }, systemPrompt, userPrompt, signal);
+      } catch (error) {
         const classified = classifyProviderError(error, Provider.OPENROUTER);
         errors.push(classified);
-        if (!classified.retryable || classified.kind === 'cancelled') throw classified;
+        if (!classified.retryable || classified.kind === "cancelled") throw classified;
       }
     }
-    throw new ProviderRequestError('All OpenRouter fallback attempts failed', {
+    throw new ProviderRequestError("All OpenRouter fallback attempts failed", {
       provider: Provider.OPENROUTER,
-      kind: errors.at(-1)?.kind ?? 'unknown',
-      retryable: errors.some(error => error.retryable),
-      code: 'ALL_FALLBACKS_FAILED',
+      kind: errors.at(-1)?.kind ?? "unknown",
+      retryable: errors.some((error) => error.retryable),
+      code: "ALL_FALLBACKS_FAILED",
       cause: errors,
     });
   }
