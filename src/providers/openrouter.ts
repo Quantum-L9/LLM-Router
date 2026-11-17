@@ -9,6 +9,7 @@ import {
   type VisionConfig,
 } from "../types.js";
 import {
+  type ChatCompletionResult,
   type ChatContentPart,
   type ChatMessage,
   type ChatTransport,
@@ -206,6 +207,27 @@ function stripTrailingSlashes(value: string): string {
   return value.slice(0, end);
 }
 
+/** Map one chat-completion result to the router's response shape. */
+function toLlmResponse(
+  model: GeneralModel,
+  response: ChatCompletionResult,
+  started: number,
+): LLMResponse {
+  return {
+    content: response.choices[0]?.message?.content ?? "",
+    model,
+    provider: Provider.OPENROUTER,
+    inputTokens: response.usage?.prompt_tokens ?? 0,
+    outputTokens: response.usage?.completion_tokens ?? 0,
+    totalTokens: response.usage?.total_tokens ?? 0,
+    cost: calculateOpenRouterCost(model, response.usage),
+    latencyMs: Date.now() - started,
+    cached: false,
+    requestId: response._request_id ?? response.id,
+    finishReason: response.choices[0]?.finish_reason ?? undefined,
+  };
+}
+
 export class OpenRouterClient implements OpenRouterClientLike {
   private readonly transport: ChatTransport;
   constructor(
@@ -251,19 +273,7 @@ export class OpenRouterClient implements OpenRouterClientLike {
         },
         { signal },
       );
-      return {
-        content: response.choices[0]?.message?.content ?? "",
-        model: config.model,
-        provider: Provider.OPENROUTER,
-        inputTokens: response.usage?.prompt_tokens ?? 0,
-        outputTokens: response.usage?.completion_tokens ?? 0,
-        totalTokens: response.usage?.total_tokens ?? 0,
-        cost: calculateOpenRouterCost(config.model, response.usage),
-        latencyMs: Date.now() - started,
-        cached: false,
-        requestId: response._request_id ?? response.id,
-        finishReason: response.choices[0]?.finish_reason ?? undefined,
-      };
+      return toLlmResponse(config.model, response, started);
     } catch (error) {
       throw classifyProviderError(error, Provider.OPENROUTER);
     }
@@ -299,19 +309,7 @@ export class OpenRouterClient implements OpenRouterClientLike {
         },
         { signal },
       );
-      return {
-        content: response.choices[0]?.message?.content ?? "",
-        model: config.model,
-        provider: Provider.OPENROUTER,
-        inputTokens: response.usage?.prompt_tokens ?? 0,
-        outputTokens: response.usage?.completion_tokens ?? 0,
-        totalTokens: response.usage?.total_tokens ?? 0,
-        cost: calculateOpenRouterCost(config.model, response.usage),
-        latencyMs: Date.now() - started,
-        cached: false,
-        requestId: response._request_id ?? response.id,
-        finishReason: response.choices[0]?.finish_reason ?? undefined,
-      };
+      return toLlmResponse(config.model, response, started);
     } catch (error) {
       throw classifyProviderError(error, Provider.OPENROUTER);
     }
